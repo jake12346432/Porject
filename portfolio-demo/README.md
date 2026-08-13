@@ -63,7 +63,9 @@ portfolio-demo/
    ├─ index.js               routes
    ├─ quotes.js              Yahoo Finance quote fetching (yahoo-finance2)
    ├─ orders.js              pricing math + Excel workbook generation
-   ├─ db.js                  SQLite schema + queries (better-sqlite3)
+   ├─ db.js                  SQLite schema + queries (Node's built-in node:sqlite —
+                              deliberately not better-sqlite3, which needs a C++
+                              compiler to install and fails on machines without one)
    └─ test-local.mjs         exercises db/orders logic with fake quotes,
                               no network needed — see "Testing" below
 ```
