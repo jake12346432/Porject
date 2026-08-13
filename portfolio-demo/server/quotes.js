@@ -1,4 +1,8 @@
-import yahooFinance from "yahoo-finance2";
+import YahooFinance from "yahoo-finance2";
+
+// v3+ of this library exports a class instead of a ready-to-use singleton —
+// has to be instantiated once and reused.
+const yahooFinance = new YahooFinance();
 
 // yahoo-finance2 prints a "you should silence this warning" survey notice on
 // first use in some versions; harmless, but keep server logs clean.
