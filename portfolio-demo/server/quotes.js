@@ -25,7 +25,9 @@ export async function getQuotes(tickers) {
         };
       }
     } catch (err) {
-      // omitted from results; caller decides how to handle missing tickers
+      // omitted from results; caller decides how to handle missing tickers, but
+      // log the real reason so failures are diagnosable instead of silent.
+      console.error(`[quotes] ${ticker} failed:`, err?.message || err);
     }
   }));
 
