@@ -1,0 +1,17 @@
+{
+  "name": "titan-buylist-server",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "xlsx": "^0.18.5",
+    "yahoo-finance2": "^4.0.2"
+  }
+}
