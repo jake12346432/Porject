@@ -24,6 +24,22 @@ npm run dev      # frontend
 npm run server    # backend
 ```
 
+### Optional: the "Describe what you want" AI box
+
+Everything else works with zero configuration. This one feature — turning a
+plain-English request like "high exposure to tech and Asia" into filter
+settings — needs a Claude API key, since it's a real LLM call:
+
+1. Get a key at [console.anthropic.com](https://console.anthropic.com) →
+   Settings → API Keys (usage-based billing, typically a fraction of a cent
+   per request at this scale).
+2. Copy `server/.env.example` to `server/.env` and paste your key in.
+3. Restart the server (`npm run dev:all`) — it picks the key up automatically.
+
+Without a key, that one box shows a clear "not set up yet" error and
+everything else in the app (filters, templates, buying, the combined order
+export) works exactly the same.
+
 ## What the buy feature does
 
 1. **Generate a portfolio** as usual (template, filters, or the AI box).

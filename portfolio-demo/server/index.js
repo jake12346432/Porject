@@ -3,6 +3,7 @@ import cors from "cors";
 import { insertBuyList, getBuyListsForDate } from "./db.js";
 import { getQuotes } from "./quotes.js";
 import { buildBuyList, buildDailyWorkbook } from "./orders.js";
+import { promptToPortfolioConfig } from "./ai.js";
 
 const app = express();
 app.use(cors());
@@ -92,6 +93,23 @@ app.get("/api/daily-orders", (req, res) => {
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="combined_order_${date}.xlsx"`);
   res.send(buffer);
+});
+
+// Turns a plain-English portfolio request into the filter-panel JSON config,
+// via a server-side Claude API call — keeps the API key off the browser
+// entirely (the frontend never had one; this used to call api.anthropic.com
+// directly from client JS, which can't work at all — no CORS, no key).
+app.post("/api/ai/portfolio-config", async (req, res) => {
+  const { prompt, sectors, regions } = req.body || {};
+  if (!prompt || typeof prompt !== "string" || !Array.isArray(sectors) || !Array.isArray(regions)) {
+    return res.status(400).json({ error: "Body must include a 'prompt' string plus 'sectors' and 'regions' arrays." });
+  }
+  try {
+    const config = await promptToPortfolioConfig(prompt, { sectors, regions });
+    res.json({ config });
+  } catch (err) {
+    res.status(err.status || 502).json({ error: err.message });
+  }
 });
 
 app.listen(PORT, () => {

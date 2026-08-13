@@ -36,4 +36,16 @@ export async function downloadDailyOrdersFile(date) {
   return resp.blob();
 }
 
+// Turns a plain-English portfolio request into the filter-panel config via a
+// server-side Claude API call (the server holds the API key, never the browser).
+export async function getAIPortfolioConfig({ prompt, sectors, regions }) {
+  const resp = await fetch(`${API_BASE}/api/ai/portfolio-config`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt, sectors, regions }),
+  });
+  const body = await asJson(resp);
+  return body.config;
+}
+
 export { API_BASE };
