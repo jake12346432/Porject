@@ -27,15 +27,15 @@ app.get("/api/health", (req, res) => {
   res.json({ ok: true, today: todayStr() });
 });
 
-// Fetch live-ish quotes for a batch of tickers, without saving anything.
-// Used by the frontend to show current prices before someone commits to buying.
+// Fetch live-ish quotes for a batch of {ticker, exch} holdings, without
+// saving anything. Not currently called by the frontend, kept for debugging.
 app.post("/api/quotes", async (req, res) => {
-  const { tickers } = req.body || {};
-  if (!Array.isArray(tickers) || tickers.length === 0) {
-    return res.status(400).json({ error: "Body must include a non-empty 'tickers' array." });
+  const { holdings } = req.body || {};
+  if (!Array.isArray(holdings) || holdings.length === 0) {
+    return res.status(400).json({ error: "Body must include a non-empty 'holdings' array of {ticker, exch}." });
   }
   try {
-    const quotes = await getQuotes(tickers);
+    const quotes = await getQuotes(holdings);
     res.json({ quotes, asOf: new Date().toISOString() });
   } catch (err) {
     res.status(502).json({ error: "Failed to fetch quotes: " + err.message });
@@ -51,7 +51,7 @@ app.post("/api/buy", async (req, res) => {
     return res.status(400).json({ error: "Body must include portfolioName, a positive dollarAmount, and a non-empty holdings array." });
   }
   try {
-    const quotes = await getQuotes(holdings.map(h => h.ticker));
+    const quotes = await getQuotes(holdings);
     const buyList = buildBuyList({ portfolioName, dollarAmount, holdings }, quotes);
     if (buyList.error) return res.status(422).json(buyList);
 

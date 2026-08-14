@@ -24,17 +24,40 @@ npm run dev      # frontend
 npm run server    # backend
 ```
 
+### Live pricing (needed for the Buy button to price anything)
+
+Copy `server/.env.example` to `server/.env` and fill in:
+
+- `FINNHUB_API_KEY` — free key from [finnhub.io/register](https://finnhub.io/register).
+  Tried first for every holding; fast (60 requests/min), reliably covers
+  US-listed stocks.
+- `TWELVEDATA_API_KEY` — free key from [twelvedata.com/pricing](https://twelvedata.com/pricing).
+  Used as a fallback for anything Finnhub can't price — covers far more
+  international exchanges, but a much stricter free-tier limit (8
+  requests/min, 800/day), so a portfolio with many non-US holdings can take
+  a few minutes to fully price.
+
+Restart the server after adding these — without them, Buy shows a clear "no
+live prices available" error instead of silently failing.
+
+(Yahoo Finance was tried first — it's free and has excellent international
+coverage — but Yahoo blocks/rate-limits requests from cloud-hosting IP
+ranges outright, confirmed via Render's own logs. It's an unofficial,
+reverse-engineered API with no real support channel, so that block isn't
+something reliably fixable from application code. Finnhub/Twelve Data are
+real authenticated APIs instead, which don't have that problem, at the cost
+of a real per-provider rate limit and imperfect symbol coverage — see
+`server/providers/symbolMap.js` for exactly what's mapped where, and the
+caveats below for what's still unverified.)
+
 ### Optional: the "Describe what you want" AI box
 
-Everything else works with zero configuration. This one feature — turning a
+Everything else works without this. This one feature — turning a
 plain-English request like "high exposure to tech and Asia" into filter
-settings — needs a Claude API key, since it's a real LLM call:
-
-1. Get a key at [console.anthropic.com](https://console.anthropic.com) →
-   Settings → API Keys (usage-based billing, typically a fraction of a cent
-   per request at this scale).
-2. Copy `server/.env.example` to `server/.env` and paste your key in.
-3. Restart the server (`npm run dev:all`) — it picks the key up automatically.
+settings — needs a Claude API key, since it's a real LLM call. Get one at
+[console.anthropic.com](https://console.anthropic.com) → Settings → API
+Keys (usage-based billing, typically a fraction of a cent per request at
+this scale), and add it to `server/.env` as `ANTHROPIC_API_KEY`.
 
 Without a key, that one box shows a clear "not set up yet" error and
 everything else in the app (filters, templates, buying, the combined order
@@ -46,13 +69,16 @@ export) works exactly the same.
 2. In the **"Prices all N current holdings…"** panel, give it a portfolio
    name (prefilled from the generated portfolio's name) and a dollar amount,
    then hit **Buy — save to today's order book**.
-3. The backend fetches current prices for every holding from Yahoo Finance
-   (delayed ~15 min, not tick-by-tick real-time — see caveats below), sizes
-   the order (shares = weight × dollar amount ÷ price, weights renormalized
-   among just the holdings that got a price), and **saves it** to a SQLite
-   database tagged with today's date. Any holding with no live quote is
-   skipped and called out in the confirmation message rather than silently
-   guessed at.
+3. The backend fetches current prices for every holding — Finnhub first,
+   Twelve Data as a fallback for whatever Finnhub can't price (see "Live
+   pricing" above) — sizes the order (shares = weight × dollar amount ÷
+   price, weights renormalized among just the holdings that got a price),
+   and **saves it** to a SQLite database tagged with today's date. Any
+   holding with no live quote on either provider is skipped and called out
+   in the confirmation message rather than silently guessed at. Quotes are
+   cached for 60 seconds server-side and shared across everyone using the
+   app, so overlapping holdings across different people's portfolios don't
+   each cost a fresh API call.
 4. **"Today's combined order book"** (further down the page) shows every
    portfolio anyone has bought today — across the whole app, not just your
    browser tab — and lets you **download one combined Excel file**:
@@ -76,24 +102,39 @@ portfolio-demo/
 │  ├─ PortfolioBuilder.jsx   the whole app
 │  └─ api.js                 thin client for the backend endpoints below
 └─ server/                Express + SQLite backend
-   ├─ index.js               routes
-   ├─ quotes.js              Yahoo Finance quote fetching (yahoo-finance2)
+   ├─ index.js               routes, auth middleware, static frontend serving
+   ├─ auth.js                shared-password HTTP Basic Auth
+   ├─ quotes.js              orchestrates Finnhub -> Twelve Data fallback,
+                              60s caching, per-provider rate limiting
+   ├─ providers/
+   │  ├─ symbolMap.js         {exch, ticker} -> each provider's symbol format
+   │  ├─ finnhub.js           Finnhub /quote fetch
+   │  └─ twelvedata.js        Twelve Data /quote fetch
+   ├─ ai.js                  server-side Claude API call for the AI box
    ├─ orders.js              pricing math + Excel workbook generation
    ├─ db.js                  SQLite schema + queries (Node's built-in node:sqlite —
                               deliberately not better-sqlite3, which needs a C++
                               compiler to install and fails on machines without one)
-   └─ test-local.mjs         exercises db/orders logic with fake quotes,
-                              no network needed — see "Testing" below
+   ├─ test-local.mjs         exercises db/orders logic with fake quotes,
+                              no network needed
+   └─ test-quotes-local.mjs  exercises quotes.js's provider fallback/caching/
+                              rate-limit logic against a mocked fetch, no
+                              network needed
 ```
 
 **Endpoints:**
 - `POST /api/buy` — `{ portfolioName, dollarAmount, holdings }` → prices,
-  sizes, and persists a buy list; returns it.
+  sizes, and persists a buy list; returns it. Each holding needs both
+  `ticker` and `exch` (the exchange code) — the provider symbol mapping
+  needs both, not just the ticker alone.
 - `GET /api/daily-orders/summary?date=YYYY-MM-DD` — JSON summary of a day's
   submissions (defaults to today).
 - `GET /api/daily-orders?date=YYYY-MM-DD` — downloads the combined `.xlsx`
   for that day.
-- `POST /api/quotes` — `{ tickers: [...] }` → raw quotes, no persistence.
+- `POST /api/quotes` — `{ holdings: [{ticker, exch}, ...] }` → raw quotes, no
+  persistence. Not currently called by the frontend; kept for debugging.
+- `POST /api/ai/portfolio-config` — `{ prompt, sectors, regions }` → the AI
+  box's filter config, via a server-side Claude API call.
 
 Storage is a single SQLite file at `server/data/buylist.db` (gitignored,
 created automatically on first run). Fine for a demo/single-instance
@@ -122,7 +163,9 @@ login prompt, no custom login page needed).
 8. Under **Environment Variables**, add:
    - `SITE_USERNAME` — pick anything, e.g. `titan`
    - `SITE_PASSWORD` — pick a real password, share it separately from the link
-   - `ANTHROPIC_API_KEY` — your key, only needed for the AI box
+   - `FINNHUB_API_KEY` — needed for live pricing to work at all
+   - `TWELVEDATA_API_KEY` — needed for international holdings to price
+   - `ANTHROPIC_API_KEY` — only needed for the AI box
 9. **Create Web Service.** Render builds and deploys automatically, and gives
    you a URL like `https://titan-wealth-xxxx.onrender.com`. Share that URL
    plus the username/password with whoever needs access — never put them in
@@ -145,19 +188,29 @@ no manual redeploy step.
 
 ## Known caveats
 
-- **Yahoo Finance quotes are delayed ~15 minutes**, not true real-time
-  minute-level data, and aren't licensed for commercial redistribution. Fine
-  for a demo; a real deployment moving real money should use a licensed
-  real-time feed instead (this was discussed and intentionally deferred —
-  see chat history).
-- **This sandbox's network policy blocks Yahoo Finance outbound**, so the
-  live-quote path (`quotes.js`) could only be verified by its *shape*, not by
-  an actual successful fetch, here. Everything downstream of it — DB writes,
-  cross-portfolio netting, missing-quote handling, Excel generation — **was**
-  verified end-to-end, including through a real running server and a real
-  browser download (see `server/test-local.mjs` for the no-network version of
-  that check). The quote fetch itself needs to be verified once this runs
-  somewhere with normal internet access.
+- **Free-tier data, not a licensed real-time feed.** Finnhub/Twelve Data's
+  free tiers are what's wired up; a real deployment moving real money should
+  use a licensed real-time feed instead (this was discussed and
+  intentionally deferred — see chat history).
+- **Symbol mapping in `server/providers/symbolMap.js` is a best-effort first
+  pass, not verified ground truth.** Neither provider is reachable from the
+  sandbox this was built in (same network restriction that blocked Yahoo),
+  so it was built from documented API conventions and tested against a
+  *mocked* fetch (`server/test-quotes-local.mjs` — confirms the fallback/
+  caching/rate-limit *logic* is correct) rather than real responses. Once
+  deployed, check the server logs (`[quotes] ... failed: ...` lines, same
+  format used to debug the earlier Yahoo issue) for symbols that come back
+  wrong or missing, and adjust the mapping table accordingly — expect at
+  least one round of this.
+- **Coverage gap by design.** Finnhub's free tier is only attempted for
+  US-listed exchanges (see `FINNHUB_EXCHANGES` in symbolMap.js); everything
+  else goes straight to Twelve Data, which has real but imperfect
+  international coverage on its free plan. Some holdings — especially small
+  OTC ADRs — may not price on either provider.
+- **Twelve Data's rate limit (8 req/min, 800/day) is the real bottleneck**
+  for portfolios with many non-US holdings — pricing one can take a few
+  minutes, and at true scale (~100 portfolios/day) the daily cap would need
+  upgrading to a paid plan.
 - **One shared password, not individual accounts.** Everyone who has the
   password can do everything — submit buy lists, download the combined order
   sheet, use the AI box (which spends against your Anthropic API key). Fine

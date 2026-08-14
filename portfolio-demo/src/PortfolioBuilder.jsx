@@ -919,7 +919,7 @@ ${list}`;
     setBuyLoading(true); setBuyError(null);
     try {
       const holdings = selected.map(s => ({
-        ticker: s.ticker, name: s.name, sector: s.sector, country: s.country, weight: s.weight,
+        ticker: s.ticker, exch: s.exch, name: s.name, sector: s.sector, country: s.country, weight: s.weight,
       }));
       const result = await submitBuy({
         portfolioName: buyName.trim() || "Untitled portfolio",

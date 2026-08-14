@@ -1,76 +1,120 @@
-import YahooFinance from "yahoo-finance2";
+import { finnhubSymbol, twelveDataSymbol } from "./providers/symbolMap.js";
+import { fetchFinnhubQuote } from "./providers/finnhub.js";
+import { fetchTwelveDataQuote } from "./providers/twelvedata.js";
 
-// v3+ of this library exports a class instead of a ready-to-use singleton —
-// has to be instantiated once and reused. Node's default fetch User-Agent
-// ("node") is a trivial bot fingerprint on top of already being a
-// cloud-hosting IP, so requests carry realistic browser-style headers here —
-// this alone won't beat a hard IP-range block, but it's free to try and may
-// help if Yahoo's blocking is scored rather than a flat IP ban.
-const yahooFinance = new YahooFinance({
-  fetchOptions: {
-    headers: {
-      "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-      "accept-language": "en-US,en;q=0.9",
-    },
-  },
-});
+// Quotes are shared across EVERYONE using this app (one server, one set of
+// API keys), so two things matter beyond just "fetch a price": don't let
+// different people's overlapping holdings each cost a fresh API call, and
+// don't blow past either provider's per-minute limit when many holdings
+// need fetching at once.
 
-// yahoo-finance2 prints a "you should silence this warning" survey notice on
-// first use in some versions; harmless, but keep server logs clean.
-yahooFinance.suppressNotices?.(["yahooSurvey"]);
+const CACHE_TTL_MS = 60_000;
+const cache = new Map(); // "EXCH:TICKER" -> { value, expiresAt }
 
-const BATCH_SIZE = 5;
-const BATCH_DELAY_MS = 150;
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function getCached(key) {
+  const hit = cache.get(key);
+  if (hit && hit.expiresAt > Date.now()) return hit.value;
+  cache.delete(key);
+  return null;
+}
+function setCached(key, value) {
+  cache.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
+}
 
-async function fetchOne(ticker, results, { retryOn429 = true } = {}) {
+/** Simple sliding-window rate limiter shared across all requests to this process. */
+class RateLimiter {
+  constructor(maxPerMinute) {
+    this.max = maxPerMinute;
+    this.timestamps = [];
+  }
+  async acquire() {
+    for (;;) {
+      const now = Date.now();
+      this.timestamps = this.timestamps.filter((t) => now - t < 60_000);
+      if (this.timestamps.length < this.max) {
+        this.timestamps.push(now);
+        return;
+      }
+      const waitMs = 60_000 - (now - this.timestamps[0]) + 50;
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+  }
+}
+
+// Leave a little headroom under each provider's stated cap.
+const finnhubLimiter = new RateLimiter(55);
+const twelveDataLimiter = new RateLimiter(7);
+
+async function fetchOneHolding(holding, results) {
+  const key = `${holding.exch}:${holding.ticker}`;
+  const cached = getCached(key);
+  if (cached) {
+    results[holding.ticker] = cached;
+    return;
+  }
+
+  const fhSymbol = finnhubSymbol(holding.exch, holding.ticker);
+  if (fhSymbol) {
+    try {
+      await finnhubLimiter.acquire();
+      const quote = await fetchFinnhubQuote(fhSymbol, process.env.FINNHUB_API_KEY);
+      results[holding.ticker] = quote;
+      setCached(key, quote);
+      return;
+    } catch (err) {
+      console.error(`[quotes] Finnhub ${key} (${fhSymbol}) failed:`, err?.message || err);
+    }
+  }
+
+  const td = twelveDataSymbol(holding.exch, holding.ticker);
   try {
-    const q = await yahooFinance.quote(ticker);
-    const price = q?.regularMarketPrice;
-    if (typeof price === "number" && price > 0) {
-      results[ticker] = {
-        price,
-        currency: q.currency || "USD",
-        asOf: q.regularMarketTime ? new Date(q.regularMarketTime).toISOString() : new Date().toISOString(),
-      };
-    }
+    await twelveDataLimiter.acquire();
+    const quote = await fetchTwelveDataQuote(td.symbol, td.exchange, process.env.TWELVEDATA_API_KEY);
+    results[holding.ticker] = quote;
+    setCached(key, quote);
   } catch (err) {
-    const is429 = /429|Too Many Requests/i.test(err?.message || "");
-    if (is429 && retryOn429) {
-      await sleep(1000);
-      return fetchOne(ticker, results, { retryOn429: false });
-    }
-    // omitted from results; caller decides how to handle missing tickers, but
-    // log the real reason so failures are diagnosable instead of silent.
-    console.error(`[quotes] ${ticker} failed:`, err?.message || err);
+    console.error(`[quotes] Twelve Data ${key} (${td.symbol}${td.exchange ? "@" + td.exchange : ""}) failed:`, err?.message || err);
   }
 }
 
 /**
- * Fetches current (Yahoo-delayed, ~15min) quotes for a list of ticker symbols.
- * Returns { [ticker]: { price, currency, asOf } } — tickers that fail to quote
- * are simply omitted, not thrown, so one bad symbol doesn't fail the whole batch.
+ * Fetches current quotes for a list of {ticker, exch} holdings. Returns
+ * { [ticker]: { price, currency, asOf } } — holdings that fail on every
+ * provider are simply omitted, not thrown, so one bad symbol doesn't fail
+ * the whole batch.
  *
- * yahoo-finance2 has to negotiate a session token ("crumb") with Yahoo before
- * ANY quote request succeeds, and caches it after the first success. Firing
- * many requests at once on a cold start means they all race to negotiate that
- * token simultaneously — Yahoo rate-limits that burst with 429s across the
- * board (seen in production on a cloud host hitting this for the first time
- * after a deploy). Fetching the first ticker alone warms the cached token,
- * then the rest go through in small batches instead of all at once.
+ * Tries Finnhub first (fast, 55/min budget) where the exchange is one its
+ * free tier is expected to cover; anything left over falls back to Twelve
+ * Data (broader international coverage, much stricter 7/min budget — a
+ * portfolio with many non-US holdings can take a few minutes to fully
+ * price). Both providers need API keys (FINNHUB_API_KEY / TWELVEDATA_API_KEY)
+ * — holdings simply get skipped, with a clear log line, if a key is missing.
  */
-export async function getQuotes(tickers) {
-  const unique = [...new Set(tickers)].filter(Boolean);
+export async function getQuotes(holdings) {
+  const seen = new Set();
+  const unique = holdings.filter((h) => {
+    if (!h?.ticker || !h?.exch || seen.has(h.ticker)) return false;
+    seen.add(h.ticker);
+    return true;
+  });
   const results = {};
   if (unique.length === 0) return results;
 
-  await fetchOne(unique[0], results);
+  if (!process.env.FINNHUB_API_KEY && !process.env.TWELVEDATA_API_KEY) {
+    console.error("[quotes] Neither FINNHUB_API_KEY nor TWELVEDATA_API_KEY is set — no quotes can be fetched.");
+    return results;
+  }
 
-  const rest = unique.slice(1);
-  for (let i = 0; i < rest.length; i += BATCH_SIZE) {
-    const batch = rest.slice(i, i + BATCH_SIZE);
-    await Promise.all(batch.map((ticker) => fetchOne(ticker, results)));
-    if (i + BATCH_SIZE < rest.length) await sleep(BATCH_DELAY_MS);
+  // Finnhub-eligible holdings first and in parallel (cheap, high limit);
+  // Twelve-Data-only holdings afterward, rate-limited by the class above —
+  // sequencing this way means the (likely larger) US-heavy portion of a
+  // portfolio resolves quickly instead of queueing behind the slow provider.
+  const finnhubEligible = unique.filter((h) => finnhubSymbol(h.exch, h.ticker));
+  const twelveDataOnly = unique.filter((h) => !finnhubSymbol(h.exch, h.ticker));
+
+  await Promise.all(finnhubEligible.map((h) => fetchOneHolding(h, results)));
+  for (const h of twelveDataOnly) {
+    await fetchOneHolding(h, results);
   }
 
   return results;
