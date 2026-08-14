@@ -307,15 +307,16 @@ function computePortfolio(p) {
 
   scored.sort((a, b) => b.finalScore - a.finalScore);
 
-  // 4. SELECTION — not capped at a fixed count. We include every stock that scores at least half
-  // as well as the best match (a genuine quality bar, not an arbitrary cutoff), with a floor of
-  // 20 holdings for diversification even if fewer clear that bar, and a ceiling of 60 so the
-  // portfolio never balloons to an unwieldy size. Only the top 10 by weight are ever shown to the
-  // client in the holdings list, but the full portfolio drives the stats, allocation charts, and
-  // the actual order ticket.
+  // 4. SELECTION — not capped at a fixed count. We include every stock that scores within 15% of
+  // the best match (a genuine quality bar, not an arbitrary cutoff), with a floor of 20 holdings
+  // for diversification even if fewer clear that bar, and a ceiling of 60 so the portfolio never
+  // balloons to an unwieldy size. 60 is a ceiling, not a target — most portfolios land well below
+  // it; only unusually inclusive filter combinations actually reach it. Only the top 10 by weight
+  // are ever shown to the client in the holdings list, but the full portfolio drives the stats,
+  // allocation charts, and the actual order ticket.
   const MIN_HOLDINGS = 20, MAX_HOLDINGS = 60;
   const topScore = scored.length ? scored[0].finalScore : 0;
-  const qualityBar = topScore * 0.5;
+  const qualityBar = topScore * 0.85;
   let selected = scored.filter(s => s.finalScore >= qualityBar);
   if (selected.length < MIN_HOLDINGS) selected = scored.slice(0, MIN_HOLDINGS);
   if (selected.length > MAX_HOLDINGS) selected = selected.slice(0, MAX_HOLDINGS);
@@ -625,6 +626,9 @@ export default function PortfolioBuilder() {
   const [portfolio, setPortfolio] = useState(null);
   const [hasGenerated, setHasGenerated] = useState(false);
   const [isStale, setIsStale] = useState(false);
+  // Filters tuck away into a compact summary once a portfolio exists, so the
+  // results are what's in front of you — not a long form. Re-expandable any time.
+  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
 
   // Describe-your-portfolio AI box
   const [aiPrompt, setAiPrompt] = useState("");
@@ -728,6 +732,7 @@ export default function PortfolioBuilder() {
     setPortfolio(res);
     setHasGenerated(true);
     setIsStale(false);
+    setFiltersCollapsed(true);
   };
 
   // Any change after a generation marks the result as stale — it does NOT auto-recompute.
@@ -1178,6 +1183,21 @@ ${list}`;
           </div>
         </div>
 
+        {/* ============ COLLAPSED FILTERS SUMMARY (shown once a portfolio exists) ============ */}
+        {filtersCollapsed && portfolio && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 32, padding: "16px 22px", background: t.surfaceDeep, border: `1px solid ${t.surfaceDeepAlt}`, borderRadius: 14 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 11, color: t.faint, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Current filters</div>
+              <div style={{ fontSize: 14.5, color: t.textStrong, fontWeight: 600 }}>{portfolio.meta ? portfolio.meta.name : "Custom portfolio"}</div>
+            </div>
+            <button onClick={() => setFiltersCollapsed(false)} style={{ flex: "0 0 auto", fontSize: 11.5, letterSpacing: "0.06em", textTransform: "uppercase", padding: "10px 18px", borderRadius: 99, border: `1px solid ${t.borderStrong}`, background: "transparent", color: t.textSecondary, cursor: "pointer" }}>
+              Edit filters
+            </button>
+          </div>
+        )}
+
+        {!filtersCollapsed && (
+        <>
         {/* ============ AI DESCRIBE BOX ============ */}
         <div style={{ marginBottom: 24, padding: 24, background: t.surfaceDeep, border: `1px solid ${t.surfaceDeepAlt}`, borderRadius: 14 }}>
           <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 20, fontWeight: 600, color: t.textStrong, marginBottom: 6 }}>
@@ -1226,7 +1246,7 @@ ${list}`;
         <div style={{ textAlign: "center", fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: t.faint, marginBottom: 20 }}>— or set your own filters —</div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))", gap: 20, marginBottom: 20 }}>
-          <FilterCard t={t} heading="Geography" description="Only include companies headquartered in the regions you pick. Leave everything selected if location doesn't matter to you.">
+          <FilterCard t={t} heading="Geography" description="Limit to the regions you pick — leave everything on if location doesn't matter.">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <span style={{ fontSize: 12.5, color: t.faint }}>{regionFilter.size}/{REGIONS.length} regions included</span>
               <ResetButton t={t} onClick={() => setRegionFilter(new Set(REGIONS))}>Reset</ResetButton>
@@ -1234,7 +1254,7 @@ ${list}`;
             <div>{REGIONS.map(r => <Chip t={t} key={r} active={regionFilter.has(r)} onClick={() => toggleSet(setRegionFilter, regionFilter, r)}>{r}</Chip>)}</div>
           </FilterCard>
 
-          <FilterCard t={t} heading="Sector" description="Only include companies from the industries you pick — for example, just Technology and Healthcare, or everything except Energy.">
+          <FilterCard t={t} heading="Sector" description="Limit to the industries you pick — leave everything on for no bias.">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <span style={{ fontSize: 12.5, color: t.faint }}>{sectorFilter.size}/{SECTORS.length} sectors included</span>
               <ResetButton t={t} onClick={() => setSectorFilter(new Set(SECTORS))}>Reset</ResetButton>
@@ -1251,22 +1271,22 @@ ${list}`;
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20 }}>
               <div>
                 <div style={{ fontSize: 13.5, fontWeight: 600, color: t.accent, marginBottom: 4 }}>Quality</div>
-                <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.5, marginBottom: 8 }}>Shares of companies with strong fundamentals, consistent earnings growth, and sustainable competitive advantages. Typically shows up as high profitability, low debt, and steady cash flow — making these relatively lower-risk and attractive for long-term investors.</div>
+                <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.5, marginBottom: 8 }}>Strong fundamentals and steady earnings — lower-risk, long-term holdings.</div>
                 <Slider t={t} value={qvgm.Q} min={0} max={100} onChange={v => setQvgm(redistribute(qvgm, "Q", v))} unit="%" />
               </div>
               <div>
                 <div style={{ fontSize: 13.5, fontWeight: 600, color: t.positive, marginBottom: 4 }}>Value</div>
-                <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.5, marginBottom: 8 }}>Shares that look cheap relative to the company's earnings, assets or cash flow. Usually identified by low price-to-earnings or price-to-book ratios — the idea that the market hasn't fully recognized what the business is really worth.</div>
+                <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.5, marginBottom: 8 }}>Shares priced cheaply relative to earnings, assets, or cash flow.</div>
                 <Slider t={t} value={qvgm.V} min={0} max={100} onChange={v => setQvgm(redistribute(qvgm, "V", v))} unit="%" />
               </div>
               <div>
                 <div style={{ fontSize: 13.5, fontWeight: 600, color: t.lavender, marginBottom: 4 }}>Growth</div>
-                <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.5, marginBottom: 8 }}>Shares of companies growing revenue and profits faster than their peers. Often trades at high price-to-earnings (P/E) ratios, since investors are paying a premium today for the growth they expect tomorrow.</div>
+                <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.5, marginBottom: 8 }}>Companies growing revenue and profits faster than their peers.</div>
                 <Slider t={t} value={qvgm.G} min={0} max={100} onChange={v => setQvgm(redistribute(qvgm, "G", v))} unit="%" />
               </div>
               <div>
                 <div style={{ fontSize: 13.5, fontWeight: 600, color: t.blueAccent, marginBottom: 4 }}>Momentum</div>
-                <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.5, marginBottom: 8 }}>Shares that have been rising in price recently, on the idea that a stock already trending upward tends to keep moving that way for a while. Can mean more volatility, since the same trend has a habit of reversing quickly too.</div>
+                <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.5, marginBottom: 8 }}>Shares trending upward recently — can mean more volatility too.</div>
                 <Slider t={t} value={qvgm.M} min={0} max={100} onChange={v => setQvgm(redistribute(qvgm, "M", v))} unit="%" />
               </div>
             </div>
@@ -1275,14 +1295,14 @@ ${list}`;
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))", gap: 20, marginBottom: 20 }}>
-          <FilterCard t={t} heading="Favor a sector" description="Lean your portfolio toward industries you have a view on, without fully excluding everything else the way the Sector filter above does.">
+          <FilterCard t={t} heading="Favor a sector" description="Tilt toward industries you like, without fully excluding the rest.">
             <PrefRow t={t} label="Set a custom sector lean" enabled={sectorPrefEnabled} onToggle={() => setSectorPrefEnabled(!sectorPrefEnabled)}>
               <WeightGroup t={t} weights={sectorWeights} onChange={setSectorWeights} maxHeight={260} colorFn={k => SECTOR_COLORS[k] || fallbackColor} />
               <ResetButton t={t} onClick={() => { setSectorWeights(equalSplit(SECTORS)); setSectorPrefEnabled(false); }}>Reset</ResetButton>
             </PrefRow>
           </FilterCard>
 
-          <FilterCard t={t} heading="Favor a region" description="Lean your portfolio toward parts of the world you want more exposure to, without fully excluding everywhere else.">
+          <FilterCard t={t} heading="Favor a region" description="Tilt toward regions you want more exposure to, without excluding others.">
             <PrefRow t={t} label="Set a custom regional lean" enabled={locPrefEnabled} onToggle={() => setLocPrefEnabled(!locPrefEnabled)}>
               <WeightGroup t={t} weights={locWeights} onChange={setLocWeights} />
               <ResetButton t={t} onClick={() => { setLocWeights(equalSplit(REGIONS)); setLocPrefEnabled(false); }}>Reset</ResetButton>
@@ -1291,14 +1311,14 @@ ${list}`;
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))", gap: 20, marginBottom: 36 }}>
-          <FilterCard t={t} heading="Dividend income" description="Companies that regularly pay shareholders a portion of their profits in cash. Useful if you want your investments to generate income, not just grow in value over time.">
+          <FilterCard t={t} heading="Dividend income" description="Companies that regularly pay shareholders cash — useful for income, not just growth.">
             <PrefRow t={t} label="Require a minimum yield" enabled={divEnabled} onToggle={() => setDivEnabled(!divEnabled)}>
               <Slider t={t} value={divMin} min={0} max={6} step={0.1} decimals={1} onChange={setDivMin} unit="%" />
               <div style={{ marginTop: 8 }}><ResetButton t={t} onClick={() => { setDivMin(2.5); setDivEnabled(false); }}>Reset</ResetButton></div>
             </PrefRow>
           </FilterCard>
 
-          <FilterCard t={t} heading="Responsible investing (ESG)" description="A score for how responsibly a company is run — covering things like environmental impact, treatment of employees, and quality of leadership.">
+          <FilterCard t={t} heading="Responsible investing (ESG)" description="A score for environmental impact, employee treatment, and governance quality.">
             <PrefRow t={t} label="Require a minimum ESG score" enabled={esgEnabled} onToggle={() => setEsgEnabled(!esgEnabled)}>
               <Slider t={t} value={esgMin} min={0} max={100} onChange={setEsgMin} />
               <div style={{ marginTop: 8 }}><ResetButton t={t} onClick={() => { setEsgMin(60); setEsgEnabled(false); }}>Reset</ResetButton></div>
@@ -1316,6 +1336,8 @@ ${list}`;
         <div style={{ textAlign: "center", margin: "36px 0 44px" }}>
           <GenerateButton big />
         </div>
+        </>
+        )}
 
         {isStale && (
           <div style={{ background: "rgba(200,155,74,0.1)", border: `1px solid ${t.staleBorder}`, color: t.gold, fontSize: 12.5, padding: "9px 14px", borderRadius: 8, marginBottom: 20, textAlign: "center" }}>
@@ -1575,12 +1597,9 @@ ${list}`;
               </div>
               <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: 16 }}>
                 <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.6, marginBottom: 12 }}>
-                  Pulls current price, market cap and dividend yield for{" "}
-                  <b style={{ color: t.textSecondary }}>all {selected.length} current holdings</b> via live web search, in batches
-                  of 5 (each batch is its own API call, so a large portfolio takes longer and uses more requests).
-                  QVGM, volatility, ESG and drawdown stay as the synthetic screening data above — there's no public real-time
-                  feed for those factor ratings. This is a search-driven snapshot, not a licensed tick-by-tick market data
-                  feed, so treat prices as approximate and re-check before acting on them.
+                  Pulls price, market cap and dividend yield for{" "}
+                  <b style={{ color: t.textSecondary }}>all {selected.length} current holdings</b> via live web search — an
+                  approximate snapshot, not a licensed real-time feed.
                 </div>
                 <button className="tw-btn-primary" onClick={fetchLiveData} disabled={liveLoading || selected.length === 0} style={{
                   padding: "10px 20px", borderRadius: 99, border: "none", cursor: liveLoading ? "default" : "pointer",
@@ -1631,11 +1650,9 @@ ${list}`;
 
               <div style={{ marginTop: 16, background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: 16 }}>
                 <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.6, marginBottom: 12 }}>
-                  Prices <b style={{ color: t.textSecondary }}>all {selected.length} current holdings</b> at current Yahoo Finance
-                  quotes (delayed ~15 min, not tick-by-tick real-time) and saves the resulting buy list into{" "}
-                  <b style={{ color: t.textSecondary }}>today's combined order book</b> — every portfolio anyone submits today is
-                  merged into one bulk order for the next market open. This does not place any real trade — there is no
-                  brokerage connection. Not financial advice.
+                  Prices <b style={{ color: t.textSecondary }}>all {selected.length} current holdings</b> at current market
+                  quotes (delayed ~15 min) and adds the buy list to{" "}
+                  <b style={{ color: t.textSecondary }}>today's combined order book</b> — no real trade is placed. Not financial advice.
                 </div>
                 <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                   <span style={{ fontSize: 12, color: t.muted }}>Portfolio name</span>
