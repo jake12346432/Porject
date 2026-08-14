@@ -1,8 +1,19 @@
 import YahooFinance from "yahoo-finance2";
 
 // v3+ of this library exports a class instead of a ready-to-use singleton —
-// has to be instantiated once and reused.
-const yahooFinance = new YahooFinance();
+// has to be instantiated once and reused. Node's default fetch User-Agent
+// ("node") is a trivial bot fingerprint on top of already being a
+// cloud-hosting IP, so requests carry realistic browser-style headers here —
+// this alone won't beat a hard IP-range block, but it's free to try and may
+// help if Yahoo's blocking is scored rather than a flat IP ban.
+const yahooFinance = new YahooFinance({
+  fetchOptions: {
+    headers: {
+      "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "accept-language": "en-US,en;q=0.9",
+    },
+  },
+});
 
 // yahoo-finance2 prints a "you should silence this warning" survey notice on
 // first use in some versions; harmless, but keep server logs clean.
