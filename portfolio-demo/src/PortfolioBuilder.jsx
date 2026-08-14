@@ -34,15 +34,24 @@ const fallbackColor = "#6B5F8C";
 // Titan Intelligence demo's midnight execution). Only structural + semantic roles are themed;
 // the categorical sector-fill colors above stay constant across themes since they're small
 // decorative swatches, not text.
+// Text colors below are chosen to clear WCAG AA (4.5:1) against this app's
+// dark/light surface colors — verified with the actual contrast formula, not
+// eyeballed. `accent`/`blueAccent`/`positive` stay as-is where they're also
+// used as button/gradient backgrounds (white text on them already passes);
+// `accentText`/`blueAccentText` are brighter dark-theme-only variants for the
+// handful of places these show up as small text instead, since brightening
+// the shared token there would have weakened button contrast instead of
+// helping it.
 const THEMES = {
   dark: {
     bg: "#0B0618", surface: "#120A26", surface2: "#191036", surfaceAlt: "#221646",
     surfaceDeep: "#150829", surfaceDeepAlt: "#180938",
     border: "#241A3A", borderStrong: "#3A1B6E", borderMuted: "#2A1F52",
     text: "#F0EBFA", textStrong: "#FBFAFE", textSecondary: "#E8DEF5",
-    muted: "#9A8DBA", faint: "#6B5F8C", placeholder: "#7A6F96",
+    muted: "#9A8DBA", faint: "#8579A4", placeholder: "#857B9E",
     accent: "#8A3FFC", positive: "#34C77B", negative: "#FF6159",
     blueAccent: "#0F62FE", gold: "#D8BC7E", lavender: "#B79BE0",
+    accentText: "#9B5BFC", blueAccentText: "#3279FE",
     lockBorder: "#1B3B2C", staleBorder: "#3D3018", onAccent: "#0B0618",
     navBg: "rgba(11,6,24,.72)", gridLine: "rgba(183,155,224,.16)",
   },
@@ -51,9 +60,10 @@ const THEMES = {
     surfaceDeep: "#F6F1FC", surfaceDeepAlt: "#EFE7FA",
     border: "#E0D5F0", borderStrong: "#C7B3E6", borderMuted: "#EAE1F6",
     text: "#241A3A", textStrong: "#150829", textSecondary: "#3A1A6C",
-    muted: "#6B5F8C", faint: "#8A7FA0", placeholder: "#A79BC4",
-    accent: "#6F30CF", positive: "#1E9E5C", negative: "#D93B30",
+    muted: "#6B5F8C", faint: "#796C92", placeholder: "#7A68A6",
+    accent: "#6F30CF", positive: "#19824C", negative: "#D63327",
     blueAccent: "#0B4FD1", gold: "#8A6A2F", lavender: "#7C4DBA",
+    accentText: "#6F30CF", blueAccentText: "#0B4FD1",
     lockBorder: "#BCE3CE", staleBorder: "#E8D9AE", onAccent: "#FFFFFF",
     navBg: "rgba(255,255,255,.72)", gridLine: "rgba(124,77,186,.14)",
   },
@@ -475,7 +485,7 @@ function ConceptLink({ term, children, style }) {
 function SectionLabel({ children, sub, t = THEMES.dark }) {
   return (
     <div style={{ marginBottom: 10, marginTop: 22 }}>
-      <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, letterSpacing: "0.12em", color: t.accent, textTransform: "uppercase" }}>{children}</div>
+      <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, letterSpacing: "0.12em", color: t.accentText, textTransform: "uppercase" }}>{children}</div>
       {sub && <div style={{ fontSize: 12, color: t.muted, marginTop: 3 }}>{sub}</div>}
     </div>
   );
@@ -542,7 +552,7 @@ function PrefRow({ label, enabled, onToggle, children, t = THEMES.dark }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
         <span style={{ fontSize: 13, color: t.textSecondary }}>{label}</span>
         <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-          <span style={{ fontSize: 10.5, color: enabled ? t.positive : t.faint, fontFamily: "'IBM Plex Mono', monospace" }}>
+          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.02em", color: enabled ? t.positive : t.muted, fontFamily: "'IBM Plex Mono', monospace" }}>
             {enabled ? "ACTIVE" : "NO PREFERENCE"}
           </span>
           <div onClick={onToggle} style={{
@@ -1224,7 +1234,7 @@ ${list}`;
                 <div style={{ fontSize: 12.5, color: t.muted, lineHeight: 1.5, marginBottom: 12 }}>{ex.blurb}</div>
                 <button onClick={() => { setPendingScroll(true); applyAIConfig(ex.config); }} style={{
                   fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", padding: "6px 14px", borderRadius: 99, border: `1px solid ${t.borderStrong}`,
-                  background: "transparent", color: t.blueAccent, cursor: "pointer", fontFamily: "'Jost', sans-serif", transition: "all 0.2s",
+                  background: "transparent", color: t.blueAccentText, cursor: "pointer", fontFamily: "'Jost', sans-serif", transition: "all 0.2s",
                 }}
                 onMouseEnter={e => { e.currentTarget.style.background = "rgba(15,98,254,0.12)"; e.currentTarget.style.borderColor = t.blueAccent; }}
                 onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = t.borderStrong; }}
@@ -1262,7 +1272,7 @@ ${list}`;
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20 }}>
               <div>
-                <div style={{ fontSize: 13.5, fontWeight: 600, color: t.accent, marginBottom: 4 }}><ConceptLink term="Quality">Quality</ConceptLink></div>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: t.accentText, marginBottom: 4 }}><ConceptLink term="Quality">Quality</ConceptLink></div>
                 <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.5, marginBottom: 8 }}>Strong fundamentals and steady earnings — lower-risk, long-term holdings.</div>
                 <Slider t={t} value={qvgm.Q} min={0} max={100} onChange={v => setQvgm(redistribute(qvgm, "Q", v))} unit="%" />
               </div>
@@ -1277,7 +1287,7 @@ ${list}`;
                 <Slider t={t} value={qvgm.G} min={0} max={100} onChange={v => setQvgm(redistribute(qvgm, "G", v))} unit="%" />
               </div>
               <div>
-                <div style={{ fontSize: 13.5, fontWeight: 600, color: t.blueAccent, marginBottom: 4 }}><ConceptLink term="Momentum">Momentum</ConceptLink></div>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: t.blueAccentText, marginBottom: 4 }}><ConceptLink term="Momentum">Momentum</ConceptLink></div>
                 <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.5, marginBottom: 8 }}>Shares trending upward recently — can mean more volatility too.</div>
                 <Slider t={t} value={qvgm.M} min={0} max={100} onChange={v => setQvgm(redistribute(qvgm, "M", v))} unit="%" />
               </div>
@@ -1340,7 +1350,7 @@ ${list}`;
         {!portfolio && (
           <div style={{ textAlign: "center", color: t.faint, padding: "50px 20px", border: `1px dashed ${t.borderMuted}`, borderRadius: 12 }}>
             <div style={{ fontSize: 15, color: t.muted, marginBottom: 6 }}>Nothing generated yet</div>
-            <div style={{ fontSize: 13 }}>Set your filters above — or describe what you want — then click <b style={{ color: t.accent }}>Generate my portfolio</b>.</div>
+            <div style={{ fontSize: 13 }}>Set your filters above — or describe what you want — then click <b style={{ color: t.accentText }}>Generate my portfolio</b>.</div>
           </div>
         )}
 
