@@ -12,6 +12,10 @@ const PRICE_HISTORY = {"OBYSY":[12.97,12.97,12.97,12.97,12.97,12.97,12.97,12.97,
 
 const SECTORS = [...new Set(STOCKS.map(s => s.sector))].sort();
 const REGIONS = [...new Set(STOCKS.map(s => s.region))].sort();
+// Every generated portfolio holds back this share as cash rather than fully investing the target
+// amount — a standard liquidity sleeve, not leftover from rounding. Fixed at the midpoint of the
+// house policy range (1.5%-2%).
+const CASH_ALLOCATION_PCT = 1.75;
 const MCAP_BANDS = ["Mega (>$200B)", "Large ($10B-$200B)", "Mid ($2B-$10B)", "Small (<$2B)"];
 
 const SECTOR_COLORS = {
@@ -305,11 +309,11 @@ function computePortfolio(p) {
 
   // 4. SELECTION — not capped at a fixed count. We include every stock that scores at least half
   // as well as the best match (a genuine quality bar, not an arbitrary cutoff), with a floor of
-  // 20 holdings for diversification even if fewer clear that bar, and a ceiling of 40 so the
+  // 20 holdings for diversification even if fewer clear that bar, and a ceiling of 60 so the
   // portfolio never balloons to an unwieldy size. Only the top 10 by weight are ever shown to the
   // client in the holdings list, but the full portfolio drives the stats, allocation charts, and
   // the actual order ticket.
-  const MIN_HOLDINGS = 20, MAX_HOLDINGS = 40;
+  const MIN_HOLDINGS = 20, MAX_HOLDINGS = 60;
   const topScore = scored.length ? scored[0].finalScore : 0;
   const qualityBar = topScore * 0.5;
   let selected = scored.filter(s => s.finalScore >= qualityBar);
@@ -328,6 +332,7 @@ function computePortfolio(p) {
   const stats = selected.length ? {
     count: selected.length, avgVol: wAvg("vol"), avgDiv: wAvg("div"), avgESG: wAvg("esg"),
     avgComposite: wAvg("composite"), avgQ: wAvg("Q"), avgV: wAvg("V"), avgG: wAvg("G"), avgM: wAvg("M"),
+    cashPct: CASH_ALLOCATION_PCT,
   } : null;
 
   const sectorAlloc = {}, regionAlloc = {};
@@ -341,6 +346,103 @@ function computePortfolio(p) {
 }
 
 /* ============================== UI ATOMS ============================== */
+
+// Animated fluid-noise hero backdrop — WebGL fragment shader, purely
+// decorative. Ported from a companion "Titan Intelligence" demo's hero
+// treatment (same fbm-noise "silk" technique, same purple/lavender palette
+// this app already uses elsewhere). Falls back to rendering nothing (letting
+// the plain CSS blob-drift backdrop underneath show through) if WebGL isn't
+// available, and freezes on a single frame under prefers-reduced-motion.
+function SilkCanvas() {
+  const canvasRef = useRef(null);
+  const [supported, setSupported] = useState(true);
+
+  useEffect(() => {
+    const cv = canvasRef.current;
+    if (!cv) return;
+    const gl = cv.getContext("webgl", { antialias: false, alpha: true });
+    if (!gl) { setSupported(false); return; }
+
+    const vsSrc = "attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}";
+    const fsSrc = "precision highp float;uniform vec2 R;uniform float T;uniform vec2 M;" +
+      "float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);}" +
+      "float n(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);" +
+      "return mix(mix(h(i),h(i+vec2(1,0)),f.x),mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x),f.y);}" +
+      "float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<5;i++){v+=a*n(p);p=p*2.03+vec2(1.7,9.2);a*=.5;}return v;}" +
+      "void main(){vec2 uv=(gl_FragCoord.xy-.5*R)/R.y;uv+=M*.05;float t=T*.045;" +
+      "vec2 q=vec2(fbm(uv*1.6+t),fbm(uv*1.6-t*.7));" +
+      "vec2 w=vec2(fbm(uv*2.1+q*1.9+vec2(1.7,9.2)+t*1.3),fbm(uv*2.1+q*1.9+vec2(8.3,2.8)-t*.9));" +
+      "float f=fbm(uv*2.+w*2.2);" +
+      "vec3 c1=vec3(.043,.024,.094),c2=vec3(.192,.075,.369),c3=vec3(.486,.302,.729),c4=vec3(.91,.871,.961);" +
+      "vec3 col=mix(c1,c2,smoothstep(.08,.9,f));" +
+      "col=mix(col,c3,smoothstep(.42,.95,w.x)*.5);" +
+      "col=mix(col,c4,smoothstep(.7,.99,f*w.y)*.32);" +
+      "col*=1.-dot(uv,uv)*.5;" +
+      "col+=(h(gl_FragCoord.xy+fract(T))-.5)*.04;" +
+      "gl_FragColor=vec4(col,1.);}";
+
+    function compile(type, src) {
+      const s = gl.createShader(type);
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      return s;
+    }
+    const program = gl.createProgram();
+    gl.attachShader(program, compile(gl.VERTEX_SHADER, vsSrc));
+    gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fsSrc));
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { setSupported(false); return; }
+    gl.useProgram(program);
+
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const posLoc = gl.getAttribLocation(program, "p");
+    gl.enableVertexAttribArray(posLoc);
+    gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+    const uR = gl.getUniformLocation(program, "R");
+    const uT = gl.getUniformLocation(program, "T");
+    const uM = gl.getUniformLocation(program, "M");
+
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    let mx = 0, my = 0, tmx = 0, tmy = 0;
+    const onPointerMove = (e) => {
+      tmx = e.clientX / window.innerWidth - 0.5;
+      tmy = e.clientY / window.innerHeight - 0.5;
+    };
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
+
+    function resize() {
+      const d = Math.min(window.devicePixelRatio || 1, 1.6);
+      const w = cv.clientWidth * d, h = cv.clientHeight * d;
+      if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; gl.viewport(0, 0, w, h); }
+    }
+
+    let raf = null;
+    const t0 = performance.now();
+    function frame(now) {
+      raf = requestAnimationFrame(frame);
+      resize();
+      mx += (tmx - mx) * 0.04;
+      my += (tmy - my) * 0.04;
+      gl.uniform2f(uR, cv.width, cv.height);
+      gl.uniform1f(uT, reduceMotion ? 12 : (now - t0) / 1000);
+      gl.uniform2f(uM, mx, -my);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      if (reduceMotion) { raf = null; } // one static frame, then stop
+    }
+    raf = requestAnimationFrame(frame);
+
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener("pointermove", onPointerMove);
+    };
+  }, []);
+
+  if (!supported) return null;
+  return <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} aria-hidden="true" />;
+}
+
 function SectionLabel({ children, sub, t = THEMES.dark }) {
   return (
     <div style={{ marginBottom: 10, marginTop: 22 }}>
@@ -921,17 +1023,23 @@ ${list}`;
       const holdings = selected.map(s => ({
         ticker: s.ticker, exch: s.exch, name: s.name, sector: s.sector, country: s.country, weight: s.weight,
       }));
+      // Only invest (100 - CASH_ALLOCATION_PCT)% of the target — the rest is a deliberate cash
+      // sleeve, not something the backend renormalizes among holdings and erases. Weights among
+      // holdings are unchanged (still sum to 100% of the equity portion); the cash amount below is
+      // recovered against the FULL original target, not the reduced amount actually sent.
+      const equityDollarAmount = portfolioValue * (1 - CASH_ALLOCATION_PCT / 100);
       const result = await submitBuy({
         portfolioName: buyName.trim() || "Untitled portfolio",
-        dollarAmount: portfolioValue,
+        dollarAmount: equityDollarAmount,
         holdings,
       });
       setLockedPortfolio({
         timestamp: new Date().toLocaleString(),
-        portfolioValue: result.dollarAmount,
+        portfolioValue,
         holdings: result.holdings,
         totalAllocated: result.totalAllocated,
-        cash: result.cash,
+        cash: portfolioValue - result.totalAllocated,
+        cashPct: CASH_ALLOCATION_PCT,
         skippedCount: result.skippedCount,
         id: result.id,
         tradeDate: result.tradeDate,
@@ -1053,9 +1161,12 @@ ${list}`;
         {/* ============ INTRO (moving gradient backdrop, inspired by the Titan Intelligence demo's silk hero) ============ */}
         <div style={{ position: "relative", textAlign: "center", marginBottom: 36, padding: "48px 20px", overflow: "hidden", borderRadius: 20 }}>
           <div className="tw-backdrop" aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden", borderRadius: 20 }}>
+            {/* Blobs are the always-present base layer — also the graceful fallback if
+                WebGL isn't available, in which case SilkCanvas just renders nothing. */}
             <div className="tw-blob tw-blob-1" style={{ background: `radial-gradient(circle, ${t.accent}, transparent 70%)` }} />
             <div className="tw-blob tw-blob-2" style={{ background: `radial-gradient(circle, ${t.lavender}, transparent 70%)` }} />
             <div className="tw-blob tw-blob-3" style={{ background: `radial-gradient(circle, ${t.gold}, transparent 70%)` }} />
+            {theme === "dark" && <SilkCanvas />}
           </div>
           <div style={{ position: "relative", zIndex: 1 }}>
             <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 38, fontWeight: 600, color: t.textStrong, marginBottom: 10 }}>
@@ -1371,11 +1482,12 @@ ${list}`;
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 24, marginTop: 18 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 24, marginTop: 18 }}>
               {[
                 ["Portfolio holdings", stats.count, ""],
                 ["Avg. dividend yield", stats.avgDiv.toFixed(2), "%"],
                 ["Avg. ESG score", stats.avgESG.toFixed(1), "/100"],
+                ["Cash allocation", stats.cashPct.toFixed(2), "%"],
                 ["Stocks considered", universeSize, ""],
               ].map(([label, val, unit]) => (
                 <div key={label} className="tw-card-hover" style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: "12px 14px" }}>
@@ -1582,8 +1694,9 @@ ${list}`;
                   </table>
                   <div style={{ fontSize: 10.5, color: t.faint, marginTop: 10 }}>
                     Allocated ${lockedPortfolio.totalAllocated.toFixed(2)} of ${lockedPortfolio.portfolioValue.toFixed(2)}{" "}
-                    (${lockedPortfolio.cash.toFixed(2)} unallocated). Fractional shares shown — round to your broker's
-                    supported precision. This is an order ticket for your own records, not an executed trade.
+                    (${lockedPortfolio.cash.toFixed(2)} held as cash{lockedPortfolio.cashPct ? ` — ${lockedPortfolio.cashPct.toFixed(2)}% policy allocation, not rounding` : ""}).
+                    Fractional shares shown — round to your broker's supported precision. This is an
+                    order ticket for your own records, not an executed trade.
                   </div>
                 </div>
               )}
