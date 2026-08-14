@@ -667,6 +667,9 @@ export default function PortfolioBuilder() {
   // Filters tuck away into a compact summary once a portfolio exists, so the
   // results are what's in front of you — not a long form. Re-expandable any time.
   const [filtersCollapsed, setFiltersCollapsed] = useState(false);
+  // First-time visitors must explicitly pick a build path — nothing renders
+  // below until they do, so there's no ambiguity about how to start.
+  const [buildMode, setBuildMode] = useState(null); // null | "describe" | "template" | "custom"
 
   // Describe-your-portfolio AI box
   const [aiPrompt, setAiPrompt] = useState("");
@@ -1200,6 +1203,42 @@ ${list}`;
 
         {!filtersCollapsed && (
         <>
+        {/* ============ BUILD MODE CHOOSER ============ */}
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ textAlign: "center", fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase", color: t.faint, marginBottom: 16 }}>
+            How do you want to build this portfolio?
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
+            {[
+              { key: "describe", icon: "✦", title: "Describe what you want", blurb: "Type it in plain English — we'll set everything up for you." },
+              { key: "template", icon: "▦", title: "Start from a template", blurb: "Pick a ready-made portfolio and tweak it if you like." },
+              { key: "custom", icon: "⚙", title: "Build your own", blurb: "Set every filter and weighting yourself, from scratch." },
+            ].map(opt => {
+              const active = buildMode === opt.key;
+              return (
+                <button key={opt.key} onClick={() => setBuildMode(opt.key)} style={{
+                  textAlign: "left", cursor: "pointer", padding: "20px 20px", borderRadius: 14,
+                  border: active ? `2px solid ${t.accent}` : `1px solid ${t.border}`,
+                  background: active ? `linear-gradient(135deg, ${t.surfaceAlt}, ${t.surface2})` : t.surface,
+                  boxShadow: active ? `0 0 0 3px ${t.accent}22` : "none",
+                  transition: "all 0.15s",
+                }}>
+                  <div style={{ fontSize: 22, marginBottom: 8, color: active ? t.accentText : t.muted }}>{opt.icon}</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: active ? t.textStrong : t.text, marginBottom: 4 }}>{opt.title}</div>
+                  <div style={{ fontSize: 12.5, color: t.muted, lineHeight: 1.5 }}>{opt.blurb}</div>
+                </button>
+              );
+            })}
+          </div>
+          {!buildMode && (
+            <div style={{ textAlign: "center", fontSize: 12.5, color: t.faint, marginTop: 18 }}>
+              Pick one of the options above to get started ↑
+            </div>
+          )}
+        </div>
+
+        {buildMode === "describe" && (
+        <>
         {/* ============ AI DESCRIBE BOX ============ */}
         <div style={{ marginBottom: 24, padding: 24, background: t.surfaceDeep, border: `1px solid ${t.surfaceDeepAlt}`, borderRadius: 14 }}>
           <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 20, fontWeight: 600, color: t.textStrong, marginBottom: 6 }}>
@@ -1222,10 +1261,13 @@ ${list}`;
           </button>
           {aiError && <div style={{ fontSize: 12, color: t.negative, marginTop: 8 }}>{aiError}</div>}
         </div>
+        </>
+        )}
 
+        {buildMode === "template" && (
+        <>
         {/* ============ EXAMPLE PORTFOLIOS ============ */}
         <div style={{ marginBottom: 40 }}>
-          <div style={{ textAlign: "center", fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: t.faint, marginBottom: 16 }}>— or start from a template —</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 16 }}>
             {EXAMPLE_PORTFOLIOS.map(ex => (
               <div key={ex.name} className="tw-card-hover" style={{ padding: 18, background: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, position: "relative", overflow: "hidden" }}>
@@ -1243,10 +1285,12 @@ ${list}`;
             ))}
           </div>
         </div>
+        </>
+        )}
 
+        {buildMode === "custom" && (
+        <>
         {/* ============ FILTERS ============ */}
-        <div style={{ textAlign: "center", fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: t.faint, marginBottom: 20 }}>— or set your own filters —</div>
-
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))", gap: 20, marginBottom: 20 }}>
           <FilterCard t={t} heading="Geography" description="Limit to the regions you pick — leave everything on if location doesn't matter.">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -1338,6 +1382,8 @@ ${list}`;
         <div style={{ textAlign: "center", margin: "36px 0 44px" }}>
           <GenerateButton big />
         </div>
+        </>
+        )}
         </>
         )}
 
