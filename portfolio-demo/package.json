@@ -9,6 +9,8 @@
     "server:install": "npm --prefix server install",
     "dev:all": "concurrently -n web,api -c blue,green \"npm run dev\" \"npm run server\"",
     "build": "vite build",
+    "build:all": "npm run build && npm run server:install",
+    "start": "npm --prefix server start",
     "lint": "oxlint",
     "preview": "vite preview"
   },

@@ -101,6 +101,48 @@ deployment; a real multi-user production deployment would want a real
 Postgres/MySQL instance instead so backups, concurrent writes, and multiple
 server instances all behave.
 
+## Hosting it (so others can reach it privately)
+
+In production, the Express server also serves the built frontend directly —
+there's one deployable service, not two, and the whole thing (UI + API) sits
+behind one shared username/password (HTTP Basic Auth — your browser's native
+login prompt, no custom login page needed).
+
+**Deploying to Render (free tier, browser-only setup — no local CLI needed):**
+
+1. Go to [render.com](https://render.com) and sign up (using your GitHub
+   account is easiest, since Render needs repo access anyway).
+2. **New +** → **Web Service** → connect the `jake12346432/Porject` repo →
+   branch `claude/quarterly-stock-prices-portfolio-qsl4v6`.
+3. **Root Directory:** `portfolio-demo` (the app lives in a subfolder of the repo).
+4. **Runtime:** Node.
+5. **Build Command:** `npm install && npm run build:all`
+6. **Start Command:** `npm start`
+7. **Instance Type:** Free.
+8. Under **Environment Variables**, add:
+   - `SITE_USERNAME` — pick anything, e.g. `titan`
+   - `SITE_PASSWORD` — pick a real password, share it separately from the link
+   - `ANTHROPIC_API_KEY` — your key, only needed for the AI box
+9. **Create Web Service.** Render builds and deploys automatically, and gives
+   you a URL like `https://titan-wealth-xxxx.onrender.com`. Share that URL
+   plus the username/password with whoever needs access — never put them in
+   the same message/channel as a security habit, though for a small trusted
+   team this is a minor concern.
+
+Every time this branch gets a new commit, Render redeploys automatically —
+no manual redeploy step.
+
+**Free tier tradeoffs, worth knowing going in:**
+- The service **spins down after ~15 minutes of no traffic** and takes
+  30-60 seconds to wake back up on the next request. Fine for occasional use,
+  annoying if someone's waiting on it.
+- The **disk is not guaranteed to persist across redeploys** — every time new
+  code ships (including future updates from this project), there's a real
+  chance today's saved buy lists in `server/data/buylist.db` get wiped. If
+  people start depending on that data surviving, upgrading to Render's paid
+  tier with a persistent disk (a few dollars/month) fixes this properly —
+  worth revisiting once this moves past testing.
+
 ## Known caveats
 
 - **Yahoo Finance quotes are delayed ~15 minutes**, not true real-time
@@ -116,9 +158,12 @@ server instances all behave.
   browser download (see `server/test-local.mjs` for the no-network version of
   that check). The quote fetch itself needs to be verified once this runs
   somewhere with normal internet access.
-- **No authentication.** Anyone who can reach the API can submit buy lists
-  and download the combined order sheet. Fine for an internal demo; needed
-  before this is exposed to real, untrusted users.
+- **One shared password, not individual accounts.** Everyone who has the
+  password can do everything — submit buy lists, download the combined order
+  sheet, use the AI box (which spends against your Anthropic API key). Fine
+  for a small trusted group sharing one link; there's no way to tell who did
+  what, and no per-person access revocation short of changing the shared
+  password for everyone.
 - **Trade date = calendar date of submission** (server's UTC date), not
   "next trading session" — a portfolio bought right after Friday's close and
   one bought Saturday would land in different daily sheets even though both

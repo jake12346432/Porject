@@ -1,13 +1,21 @@
 import express from "express";
 import cors from "cors";
+import path from "node:path";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import { insertBuyList, getBuyListsForDate } from "./db.js";
 import { getQuotes } from "./quotes.js";
 import { buildBuyList, buildDailyWorkbook } from "./orders.js";
 import { promptToPortfolioConfig } from "./ai.js";
+import { siteAuth } from "./auth.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const DIST_DIR = path.join(__dirname, "..", "dist");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(siteAuth);
 
 const PORT = process.env.PORT || 8787;
 
@@ -111,6 +119,23 @@ app.post("/api/ai/portfolio-config", async (req, res) => {
     res.status(err.status || 502).json({ error: err.message });
   }
 });
+
+// In production this server also serves the built frontend (`npm run build`
+// output), so the whole app — UI and API — is one deployable service behind
+// one password gate. In local dev the frontend instead runs separately via
+// `npm run dev` (Vite), so `dist/` won't exist yet — that's fine, this is
+// skipped and only the API runs here.
+if (fs.existsSync(DIST_DIR)) {
+  app.use(express.static(DIST_DIR));
+  // Express 5 removed bare "*" route patterns, so this fallback (for
+  // client-side routes with no matching static file) is a plain middleware
+  // instead of app.get("*", ...).
+  app.use((req, res, next) => {
+    if (req.method !== "GET" || req.path.startsWith("/api/")) return next();
+    res.sendFile(path.join(DIST_DIR, "index.html"));
+  });
+  console.log("Serving built frontend from", DIST_DIR);
+}
 
 app.listen(PORT, () => {
   console.log(`Buy-list server listening on http://localhost:${PORT}`);

@@ -1,4 +1,8 @@
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8787";
+// In dev, frontend (5173) and backend (8787) run as separate processes, so
+// the frontend needs the backend's full URL. In a production build, Express
+// serves this same build as static files from the same origin as the API,
+// so relative paths ("") just work — no separate URL needed at all.
+const API_BASE = import.meta.env.VITE_API_BASE || (import.meta.env.DEV ? "http://localhost:8787" : "");
 
 async function asJson(resp) {
   const body = await resp.json().catch(() => ({}));
