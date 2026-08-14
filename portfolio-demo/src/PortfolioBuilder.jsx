@@ -42,18 +42,25 @@ const fallbackColor = "#6B5F8C";
 // handful of places these show up as small text instead, since brightening
 // the shared token there would have weakened button contrast instead of
 // helping it.
+// Palette anchored to the Titan Wealth brand guidelines: Carbon Black
+// (#0A0A0D), Deep Purple (#31135E) and Empowered Purple (#8A3FFC) as the
+// primary purple-and-black system; Imagination Blue (#0F62FE), Creative
+// Orange (#FF832B) and Clarity Teal (#58F9CA) as the secondary palette,
+// used sparingly per the brand book. Light-mode `orange`/`teal` are darkened
+// off their brand hex to clear WCAG AA text contrast on white — the brand
+// hexes themselves are only bright enough for use as fills/icons there.
 const THEMES = {
   dark: {
-    bg: "#0B0618", surface: "#120A26", surface2: "#191036", surfaceAlt: "#221646",
-    surfaceDeep: "#150829", surfaceDeepAlt: "#180938",
-    border: "#241A3A", borderStrong: "#3A1B6E", borderMuted: "#2A1F52",
-    text: "#F0EBFA", textStrong: "#FBFAFE", textSecondary: "#E8DEF5",
-    muted: "#9A8DBA", faint: "#8579A4", placeholder: "#857B9E",
+    bg: "#0A0A0D", surface: "#141019", surface2: "#1C1626", surfaceAlt: "#271B3D",
+    surfaceDeep: "#100C15", surfaceDeepAlt: "#191320",
+    border: "#241F2E", borderStrong: "#3D2A5C", borderMuted: "#2A2433",
+    text: "#F1EFF4", textStrong: "#FFFFFF", textSecondary: "#E4DFEC",
+    muted: "#9A93AC", faint: "#87809B", placeholder: "#867F98",
     accent: "#8A3FFC", positive: "#34C77B", negative: "#FF6159",
-    blueAccent: "#0F62FE", gold: "#D8BC7E", lavender: "#B79BE0",
+    blueAccent: "#0F62FE", orange: "#FF832B", teal: "#58F9CA", lavender: "#B79BE0",
     accentText: "#9B5BFC", blueAccentText: "#3279FE",
-    lockBorder: "#1B3B2C", staleBorder: "#3D3018", onAccent: "#0B0618",
-    navBg: "rgba(11,6,24,.72)", gridLine: "rgba(183,155,224,.16)",
+    lockBorder: "#1B3B2C", staleBorder: "#3D2410", onAccent: "#0A0A0D",
+    navBg: "rgba(10,10,13,.72)", gridLine: "rgba(183,155,224,.16)",
   },
   light: {
     bg: "#F5F2FA", surface: "#FFFFFF", surface2: "#F1EDF9", surfaceAlt: "#E8DEF5",
@@ -62,9 +69,9 @@ const THEMES = {
     text: "#241A3A", textStrong: "#150829", textSecondary: "#3A1A6C",
     muted: "#6B5F8C", faint: "#796C92", placeholder: "#7A68A6",
     accent: "#6F30CF", positive: "#19824C", negative: "#D63327",
-    blueAccent: "#0B4FD1", gold: "#8A6A2F", lavender: "#7C4DBA",
+    blueAccent: "#0B4FD1", orange: "#B8500A", teal: "#0A6E58", lavender: "#7C4DBA",
     accentText: "#6F30CF", blueAccentText: "#0B4FD1",
-    lockBorder: "#BCE3CE", staleBorder: "#E8D9AE", onAccent: "#FFFFFF",
+    lockBorder: "#BCE3CE", staleBorder: "#F0D3B8", onAccent: "#FFFFFF",
     navBg: "rgba(255,255,255,.72)", gridLine: "rgba(124,77,186,.14)",
   },
 };
@@ -495,8 +502,8 @@ function Chip({ active, onClick, children, t = THEMES.dark }) {
   return (
     <button onClick={onClick} style={{
       padding: "5px 11px", borderRadius: 999, border: `1px solid ${active ? t.accent : t.borderStrong}`,
-      background: active ? "rgba(138,63,252,0.14)" : "transparent", color: active ? t.gold : t.muted,
-      fontSize: 12, fontFamily: "'Jost', sans-serif", cursor: "pointer", marginRight: 6, marginBottom: 6,
+      background: active ? "rgba(138,63,252,0.14)" : "transparent", color: active ? t.orange : t.muted,
+      fontSize: 12, fontFamily: "'Inter', sans-serif", cursor: "pointer", marginRight: 6, marginBottom: 6,
       transition: "all 0.15s", whiteSpace: "nowrap",
     }}
     onMouseEnter={e => { if (!active) { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.color = t.textSecondary; } }}
@@ -512,7 +519,7 @@ function Toggle3({ value, options, onChange, t = THEMES.dark }) {
         <button key={opt} onClick={() => onChange(opt)} style={{
           flex: 1, padding: "6px 8px", borderRadius: 6, border: "none",
           background: value === opt ? t.accent : "transparent", color: value === opt ? t.onAccent : t.muted,
-          fontSize: 12, fontWeight: value === opt ? 600 : 400, fontFamily: "'Jost', sans-serif", cursor: "pointer",
+          fontSize: 12, fontWeight: value === opt ? 600 : 400, fontFamily: "'Inter', sans-serif", cursor: "pointer",
           transition: "all 0.15s",
         }}>{opt}</button>
       ))}
@@ -569,7 +576,7 @@ function PrefRow({ label, enabled, onToggle, children, t = THEMES.dark }) {
 }
 
 function FactorBars({ Q, V, G, M, t = THEMES.dark }) {
-  const items = [["Q", Q, t.accent], ["V", V, t.positive], ["G", G, t.lavender], ["M", M, t.blueAccent]];
+  const items = [["Q", Q, t.accent], ["V", V, t.positive], ["G", G, t.teal], ["M", M, t.blueAccent]];
   return (
     <div style={{ display: "flex", gap: 4, alignItems: "flex-end", height: 22 }}>
       {items.map(([label, val, color]) => (
@@ -607,7 +614,7 @@ function ResetButton({ onClick, t = THEMES.dark, children = "Reset" }) {
   return (
     <button onClick={onClick} style={{
       fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: t.muted, background: "none",
-      border: `1px solid ${t.borderStrong}`, borderRadius: 99, padding: "5px 12px", cursor: "pointer", fontFamily: "'Jost', sans-serif", transition: "all 0.2s",
+      border: `1px solid ${t.borderStrong}`, borderRadius: 99, padding: "5px 12px", cursor: "pointer", fontFamily: "'Inter', sans-serif", transition: "all 0.2s",
     }}
     onMouseEnter={e => { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.color = t.textSecondary; }}
     onMouseLeave={e => { e.currentTarget.style.borderColor = t.borderStrong; e.currentTarget.style.color = t.muted; }}
@@ -624,7 +631,7 @@ function FilterCard({ heading, description, children, t = THEMES.dark, wide }) {
       background: t.surface, border: `1px solid ${t.border}`, borderRadius: 14,
       padding: "22px 24px", gridColumn: wide ? "1 / -1" : "auto",
     }}>
-      <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 20, fontWeight: 600, color: t.textStrong, marginBottom: 6 }}>{heading}</div>
+      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em", color: t.textStrong, marginBottom: 6 }}>{heading}</div>
       {description && <div style={{ fontSize: 13, color: t.muted, lineHeight: 1.55, marginBottom: 16, maxWidth: 640 }}>{description}</div>}
       {children}
     </div>
@@ -1081,16 +1088,16 @@ ${list}`;
       width: big ? "min(420px, 100%)" : "auto", padding: big ? "17px 26px" : "13px 26px", borderRadius: 99,
       border: `1px solid ${theme === "dark" ? "rgba(216,188,126,.4)" : "rgba(138,63,252,.35)"}`,
       background: `linear-gradient(135deg, ${t.lavender}, ${t.accent})`, color: "#FFFFFF", fontSize: big ? 15 : 13, fontWeight: 600, cursor: "pointer",
-      fontFamily: "'Jost', sans-serif", letterSpacing: "0.12em", textTransform: "uppercase",
+      fontFamily: "'Inter', sans-serif", letterSpacing: "0.12em", textTransform: "uppercase",
     }}>
       {hasGenerated ? "↻ Regenerate portfolio" : "▸ Generate my portfolio"}
     </button>
   );
 
   return (
-    <div style={{ fontFamily: "'Jost', sans-serif", background: t.bg, color: t.text, minHeight: "100vh", fontSize: 14, transition: "background 0.25s, color 0.25s" }}>
+    <div style={{ fontFamily: "'Inter', sans-serif", background: t.bg, color: t.text, minHeight: "100vh", fontSize: 14, transition: "background 0.25s, color 0.25s" }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600;700&family=Cormorant+Garamond:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
         * { box-sizing: border-box; font-variant-numeric: tabular-nums; }
         input[type=range] { -webkit-appearance: none; background: transparent; }
         input[type=range]::-webkit-slider-runnable-track { height: 4px; background: ${t.borderStrong}; border-radius: 4px; }
@@ -1119,19 +1126,21 @@ ${list}`;
         padding: "12px 20px", background: t.navBg, backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)",
         borderBottom: `1px solid ${t.gridLine}`,
       }}>
-        <svg width="30" height="30" viewBox="0 0 30 30" style={{ flexShrink: 0 }}>
-          <circle cx="15" cy="15" r="13" fill={`url(#tw-roundel-${theme})`} stroke={t.accent} strokeWidth="1.4" />
+        {/* Open-ring mark, after the real Titan Wealth logo — a broken circle
+            in Empowered Purple sitting beside the wordmark, not a filled badge. */}
+        <svg width="26" height="26" viewBox="0 0 30 30" style={{ flexShrink: 0 }}>
           <defs>
-            <radialGradient id={`tw-roundel-${theme}`} cx="32%" cy="28%" r="75%">
-              <stop offset="0%" stopColor={theme === "dark" ? "#3A1B6E" : "#B79BE0"} />
-              <stop offset="100%" stopColor={theme === "dark" ? "#31135E" : "#8A3FFC"} />
-            </radialGradient>
+            <linearGradient id={`tw-ring-${theme}`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={theme === "dark" ? "#B79BE0" : "#8A3FFC"} />
+              <stop offset="100%" stopColor={t.accent} />
+            </linearGradient>
           </defs>
-          <text x="15" y="19.5" textAnchor="middle" fontFamily="'Cormorant Garamond', serif" fontSize="13" fill="#FBFAFE">T</text>
+          <circle cx="15" cy="15" r="11.5" fill="none" stroke={`url(#tw-ring-${theme})`} strokeWidth="3.2"
+            strokeLinecap="round" strokeDasharray="60 12.2" transform="rotate(-98 15 15)" />
         </svg>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 14, fontWeight: 600, letterSpacing: "0.3em", color: t.textStrong }}>TITAN</span>
-          <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 12, fontWeight: 300, color: t.lavender }}>Wealth</span>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 16, fontWeight: 800, letterSpacing: "0.01em", color: t.textStrong }}>TITAN</span>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 500, color: t.accentText }}>Wealth</span>
         </div>
         <div style={{ width: 1, height: 18, background: t.gridLine, margin: "0 2px" }} />
         <span style={{ fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: t.muted }}>Portfolio Screen</span>
@@ -1153,7 +1162,7 @@ ${list}`;
           >
             {theme === "dark" ? (
               <>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.gold} strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4.5" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.orange} strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4.5" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
                 Light mode
               </>
             ) : (
@@ -1175,11 +1184,11 @@ ${list}`;
                 WebGL isn't available, in which case SilkCanvas just renders nothing. */}
             <div className="tw-blob tw-blob-1" style={{ background: `radial-gradient(circle, ${t.accent}, transparent 70%)` }} />
             <div className="tw-blob tw-blob-2" style={{ background: `radial-gradient(circle, ${t.lavender}, transparent 70%)` }} />
-            <div className="tw-blob tw-blob-3" style={{ background: `radial-gradient(circle, ${t.gold}, transparent 70%)` }} />
+            <div className="tw-blob tw-blob-3" style={{ background: `radial-gradient(circle, ${t.orange}, transparent 70%)` }} />
             {theme === "dark" && <SilkCanvas />}
           </div>
           <div style={{ position: "relative", zIndex: 1 }}>
-            <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 38, fontWeight: 600, color: t.textStrong, marginBottom: 10 }}>
+            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 36, fontWeight: 800, letterSpacing: "-0.02em", color: t.textStrong, marginBottom: 10 }}>
               Build your portfolio
             </div>
             <div style={{ fontSize: 14.5, color: t.muted, maxWidth: 620, margin: "0 auto", lineHeight: 1.6 }}>
@@ -1241,7 +1250,7 @@ ${list}`;
         <>
         {/* ============ AI DESCRIBE BOX ============ */}
         <div style={{ marginBottom: 24, padding: 24, background: t.surfaceDeep, border: `1px solid ${t.surfaceDeepAlt}`, borderRadius: 14 }}>
-          <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 20, fontWeight: 600, color: t.textStrong, marginBottom: 6 }}>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em", color: t.textStrong, marginBottom: 6 }}>
             ✦ Describe what you want
           </div>
           <div style={{ fontSize: 13, color: t.muted, marginBottom: 14 }}>Type it in plain English and we'll set everything up for you.</div>
@@ -1249,7 +1258,7 @@ ${list}`;
             value={aiPrompt} onChange={e => setAiPrompt(e.target.value)}
             placeholder='e.g. "Low volatility, high quality, dividend-focused, Japan and Europe only"'
             rows={3}
-            style={{ width: "100%", background: t.bg, color: t.text, border: `1px solid ${t.surfaceDeepAlt}`, borderRadius: 8, padding: "10px 12px", fontSize: 13.5, fontFamily: "'Jost', sans-serif", resize: "vertical" }}
+            style={{ width: "100%", background: t.bg, color: t.text, border: `1px solid ${t.surfaceDeepAlt}`, borderRadius: 8, padding: "10px 12px", fontSize: 13.5, fontFamily: "'Inter', sans-serif", resize: "vertical" }}
           />
           <button className="tw-btn-primary" onClick={runAI} disabled={aiLoading || !aiPrompt.trim()} style={{
             marginTop: 10, padding: "11px 24px", borderRadius: 99, border: "none",
@@ -1276,7 +1285,7 @@ ${list}`;
                 <div style={{ fontSize: 12.5, color: t.muted, lineHeight: 1.5, marginBottom: 12 }}>{ex.blurb}</div>
                 <button onClick={() => { setPendingScroll(true); applyAIConfig(ex.config); }} style={{
                   fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", padding: "6px 14px", borderRadius: 99, border: `1px solid ${t.borderStrong}`,
-                  background: "transparent", color: t.blueAccentText, cursor: "pointer", fontFamily: "'Jost', sans-serif", transition: "all 0.2s",
+                  background: "transparent", color: t.blueAccentText, cursor: "pointer", fontFamily: "'Inter', sans-serif", transition: "all 0.2s",
                 }}
                 onMouseEnter={e => { e.currentTarget.style.background = "rgba(15,98,254,0.12)"; e.currentTarget.style.borderColor = t.blueAccent; }}
                 onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = t.borderStrong; }}
@@ -1326,7 +1335,7 @@ ${list}`;
                 <Slider t={t} value={qvgm.V} min={0} max={100} onChange={v => setQvgm(redistribute(qvgm, "V", v))} unit="%" />
               </div>
               <div>
-                <div style={{ fontSize: 13.5, fontWeight: 600, color: t.lavender, marginBottom: 4 }}><ConceptLink term="Growth">Growth</ConceptLink></div>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: t.teal, marginBottom: 4 }}><ConceptLink term="Growth">Growth</ConceptLink></div>
                 <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.5, marginBottom: 8 }}>Companies growing revenue and profits faster than their peers.</div>
                 <Slider t={t} value={qvgm.G} min={0} max={100} onChange={v => setQvgm(redistribute(qvgm, "G", v))} unit="%" />
               </div>
@@ -1388,7 +1397,7 @@ ${list}`;
         )}
 
         {isStale && (
-          <div style={{ background: "rgba(200,155,74,0.1)", border: `1px solid ${t.staleBorder}`, color: t.gold, fontSize: 12.5, padding: "9px 14px", borderRadius: 8, marginBottom: 20, textAlign: "center" }}>
+          <div style={{ background: "rgba(255,131,43,0.1)", border: `1px solid ${t.staleBorder}`, color: t.orange, fontSize: 12.5, padding: "9px 14px", borderRadius: 8, marginBottom: 20, textAlign: "center" }}>
             Filters changed since the last generation — click <b>Regenerate portfolio</b> above to refresh the results below.
           </div>
         )}
@@ -1403,7 +1412,7 @@ ${list}`;
         {portfolio && stats && (
           <div ref={resultsRef}>
             <div style={{ textAlign: "center", marginBottom: 24 }}>
-              <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 30, fontWeight: 600, color: t.textStrong, marginBottom: 8 }}>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 28, fontWeight: 800, letterSpacing: "-0.02em", color: t.textStrong, marginBottom: 8 }}>
                 {portfolio.meta ? portfolio.meta.name : "Your portfolio"}
               </div>
               {portfolio.meta && <div style={{ fontSize: 14, color: t.muted, maxWidth: 560, margin: "0 auto", lineHeight: 1.6 }}>{portfolio.meta.blurb}</div>}
@@ -1599,7 +1608,7 @@ ${list}`;
                 <div style={{ fontSize: 10.5, color: t.faint, marginTop: 14, lineHeight: 1.5 }}>
                   Factor legend: <span style={{ color: t.accent }}>■</span> Quality &nbsp;
                   <span style={{ color: t.positive }}>■</span> Value &nbsp;
-                  <span style={{ color: t.lavender }}>■</span> Growth &nbsp;
+                  <span style={{ color: t.teal }}>■</span> Growth &nbsp;
                   <span style={{ color: t.blueAccent }}>■</span> Momentum
                 </div>
               </div>
@@ -1620,7 +1629,7 @@ ${list}`;
                 <tbody>
                   {topTen.map((s, i) => (
                     <tr key={s.exch + s.ticker} style={{ borderTop: `1px solid ${t.surfaceAlt}`, background: i % 2 === 0 ? "transparent" : t.surfaceDeep }}>
-                      <td style={{ padding: "8px 12px", fontFamily: "'IBM Plex Mono', monospace", color: t.gold }}>{s.ticker}</td>
+                      <td style={{ padding: "8px 12px", fontFamily: "'IBM Plex Mono', monospace", color: t.orange }}>{s.ticker}</td>
                       <td style={{ padding: "8px 12px", color: t.textSecondary, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</td>
                       <td style={{ padding: "8px 12px", color: t.muted, fontSize: 11.5 }}>{s.sector}</td>
                       <td style={{ padding: "8px 12px", color: t.muted, fontSize: 11.5 }}>{s.country}</td>
@@ -1681,7 +1690,7 @@ ${list}`;
                             const ld = liveData[stockKey(s)];
                             return (
                               <tr key={s.exch + s.ticker} style={{ borderTop: `1px solid ${t.surfaceAlt}` }}>
-                                <td style={{ padding: "5px 10px", fontFamily: "'IBM Plex Mono', monospace", color: t.gold }}>{s.ticker}</td>
+                                <td style={{ padding: "5px 10px", fontFamily: "'IBM Plex Mono', monospace", color: t.orange }}>{s.ticker}</td>
                                 <td style={{ padding: "5px 10px", textAlign: "right", fontFamily: "'IBM Plex Mono', monospace" }}>{ld && ld.price != null ? `$${ld.price.toFixed(2)}` : "—"}</td>
                                 <td style={{ padding: "5px 10px", textAlign: "right", fontFamily: "'IBM Plex Mono', monospace", color: t.muted }}>{ld && ld.mcap != null ? `$${(ld.mcap / 1e9).toFixed(1)}B` : "—"}</td>
                                 <td style={{ padding: "5px 10px", textAlign: "right", fontFamily: "'IBM Plex Mono', monospace", color: t.muted }}>{ld && ld.divYield != null ? `${ld.divYield.toFixed(2)}%` : "—"}</td>
@@ -1747,7 +1756,7 @@ ${list}`;
                     <tbody>
                       {lockedPortfolio.holdings.map(h => (
                         <tr key={h.ticker} style={{ borderTop: `1px solid ${t.surfaceAlt}` }}>
-                          <td style={{ padding: "6px 10px", fontFamily: "'IBM Plex Mono', monospace", color: t.gold }}>{h.ticker}</td>
+                          <td style={{ padding: "6px 10px", fontFamily: "'IBM Plex Mono', monospace", color: t.orange }}>{h.ticker}</td>
                           <td style={{ padding: "6px 10px", color: t.textSecondary, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.name}</td>
                           <td style={{ padding: "6px 10px", textAlign: "right", fontFamily: "'IBM Plex Mono', monospace" }}>{h.weight.toFixed(2)}%</td>
                           <td style={{ padding: "6px 10px", textAlign: "right", fontFamily: "'IBM Plex Mono', monospace" }}>${h.price.toFixed(2)}</td>
