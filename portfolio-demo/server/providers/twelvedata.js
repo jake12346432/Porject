@@ -7,11 +7,20 @@ export async function fetchTwelveDataQuote(symbol, exchange, apiKey) {
   if (exchange) params.set("exchange", exchange);
   const url = `https://api.twelvedata.com/quote?${params.toString()}`;
   const resp = await fetch(url);
+
+  // Read the body regardless of status — Twelve Data (like most REST APIs)
+  // puts the actual reason ("plan doesn't include this exchange", "symbol
+  // not found", etc.) in a JSON body even on non-2xx responses. Throwing
+  // just the bare HTTP status (what this used to do) discarded that.
+  const bodyText = await resp.text();
+  let data = null;
+  try { data = JSON.parse(bodyText); } catch { /* not JSON, fall through */ }
+
   if (!resp.ok) {
-    throw new Error(`Twelve Data HTTP ${resp.status}`);
+    const detail = data?.message || bodyText.slice(0, 200) || "(no body)";
+    throw new Error(`Twelve Data HTTP ${resp.status}: ${detail}`);
   }
-  const data = await resp.json();
-  if (data.status === "error" || data.code) {
+  if (data?.status === "error" || data?.code) {
     throw new Error(`Twelve Data: ${data.message || "unknown error"}`);
   }
   const price = parseFloat(data?.close ?? data?.price);

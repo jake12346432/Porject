@@ -30,13 +30,16 @@ global.fetch = async (url) => {
     if (symbol === "KIK") {
       return jsonResponse({ close: "7.67", currency: "EUR", datetime: "2026-08-14" });
     }
-    return jsonResponse({ status: "error", message: "symbol not found" });
+    // Mirrors what production actually showed: a plain HTTP 404 with a JSON
+    // body explaining why, not a 200 with a status:"error" field.
+    return jsonResponse({ code: 404, message: "This exchange isn't available on your plan" }, { ok: false, status: 404 });
   }
   throw new Error("unexpected fetch to " + url);
 };
 
-function jsonResponse(obj) {
-  return { ok: true, json: async () => obj };
+function jsonResponse(obj, { ok = true, status = 200 } = {}) {
+  const text = JSON.stringify(obj);
+  return { ok, status, json: async () => obj, text: async () => text };
 }
 
 const { getQuotes } = await import("./quotes.js");
