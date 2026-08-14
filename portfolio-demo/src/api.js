@@ -22,24 +22,6 @@ export async function submitBuy({ portfolioName, dollarAmount, holdings }) {
   return asJson(resp);
 }
 
-// Summary of everything submitted for a given trade date (defaults server-side to today).
-export async function getDailyOrdersSummary(date) {
-  const qs = date ? `?date=${encodeURIComponent(date)}` : "";
-  const resp = await fetch(`${API_BASE}/api/daily-orders/summary${qs}`);
-  return asJson(resp);
-}
-
-// Downloads the combined bulk-order workbook for a given trade date as a Blob.
-export async function downloadDailyOrdersFile(date) {
-  const qs = date ? `?date=${encodeURIComponent(date)}` : "";
-  const resp = await fetch(`${API_BASE}/api/daily-orders${qs}`);
-  if (!resp.ok) {
-    const body = await resp.json().catch(() => ({}));
-    throw new Error(body.error || `Request failed (${resp.status})`);
-  }
-  return resp.blob();
-}
-
 // Turns a plain-English portfolio request into the filter-panel config via a
 // server-side Claude API call (the server holds the API key, never the browser).
 export async function getAIPortfolioConfig({ prompt, sectors, regions }) {

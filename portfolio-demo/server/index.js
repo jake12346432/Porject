@@ -8,6 +8,7 @@ import { getQuotes } from "./quotes.js";
 import { buildBuyList, buildDailyWorkbook } from "./orders.js";
 import { promptToPortfolioConfig } from "./ai.js";
 import { siteAuth } from "./auth.js";
+import { sendDailyOrderReport } from "./email.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST_DIR = path.join(__dirname, "..", "dist");
@@ -71,8 +72,10 @@ app.post("/api/buy", async (req, res) => {
   }
 });
 
-// Quick summary of what's been submitted for a given day (defaults to today) —
-// powers the "Today's Combined Orders" admin panel.
+// Quick summary of what's been submitted for a given day (defaults to today).
+// Not surfaced in the UI — the daily roll-up goes out by email (see
+// /api/daily-orders/email-report below) rather than being downloadable by
+// anyone who opens the site. Kept as a manual fallback for checking state.
 app.get("/api/daily-orders/summary", (req, res) => {
   const date = req.query.date || todayStr();
   const buyLists = getBuyListsForDate(date);
@@ -90,7 +93,9 @@ app.get("/api/daily-orders/summary", (req, res) => {
   });
 });
 
-// Downloads the combined bulk-order workbook for a given day (defaults to today).
+// Downloads the combined bulk-order workbook for a given day (defaults to
+// today). Manual fallback only — not linked from the UI; the daily email is
+// the intended delivery path.
 app.get("/api/daily-orders", (req, res) => {
   const date = req.query.date || todayStr();
   const buyLists = getBuyListsForDate(date);
@@ -101,6 +106,22 @@ app.get("/api/daily-orders", (req, res) => {
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="combined_order_${date}.xlsx"`);
   res.send(buffer);
+});
+
+// Builds today's combined order workbook and emails it to DAILY_REPORT_EMAIL
+// via Resend. Meant to be triggered by an external scheduler (a GitHub
+// Actions cron job — see .github/workflows/daily-order-email.yml) rather
+// than a person clicking a button; an external trigger also has the useful
+// side effect of waking this service up if Render's free tier had it asleep.
+// Protected by the same site password as everywhere else (Basic Auth) — the
+// scheduler sends credentials the same way a browser would.
+app.post("/api/daily-orders/email-report", async (req, res) => {
+  try {
+    const result = await sendDailyOrderReport();
+    res.json(result);
+  } catch (err) {
+    res.status(err.status || 502).json({ error: err.message });
+  }
 });
 
 // Turns a plain-English portfolio request into the filter-panel JSON config,

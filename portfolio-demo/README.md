@@ -60,15 +60,24 @@ Keys (usage-based billing, typically a fraction of a cent per request at
 this scale), and add it to `server/.env` as `ANTHROPIC_API_KEY`.
 
 Without a key, that one box shows a clear "not set up yet" error and
-everything else in the app (filters, templates, buying, the combined order
-export) works exactly the same.
+everything else in the app (filters, templates, buying) works exactly the same.
+
+### Daily combined-order email
+
+The combined order book (every portfolio anyone bought that day, netted into
+one bulk order) is **not downloadable from the site** — it goes out once a
+day by email instead, sent by an external scheduler rather than anyone
+clicking a button in the browser. See "Hosting it" below for the full setup
+(a Resend account + a GitHub Actions secret or two); until that's
+configured, `POST /api/daily-orders/email-report` returns a clear
+"not set up yet" error, same pattern as the other optional integrations.
 
 ## What the buy feature does
 
 1. **Generate a portfolio** as usual (template, filters, or the AI box).
 2. In the **"Prices all N current holdings…"** panel, give it a portfolio
    name (prefilled from the generated portfolio's name) and a dollar amount,
-   then hit **Buy — save to today's order book**.
+   then hit **Buy portfolio**.
 3. The backend fetches current prices for every holding — Finnhub first,
    Twelve Data as a fallback for whatever Finnhub can't price (see "Live
    pricing" above) — sizes the order (shares = weight × dollar amount ÷
@@ -79,9 +88,10 @@ export) works exactly the same.
    cached for 60 seconds server-side and shared across everyone using the
    app, so overlapping holdings across different people's portfolios don't
    each cost a fresh API call.
-4. **"Today's combined order book"** (further down the page) shows every
-   portfolio anyone has bought today — across the whole app, not just your
-   browser tab — and lets you **download one combined Excel file**:
+4. That's it from the browser's point of view — no combined-order panel or
+   download button on the site. Once a day (15:00 UTC, see "Hosting it"),
+   everyone's buys from that day get combined into one workbook and emailed
+   out:
    - **Bulk Order** sheet — one row per ticker, net shares/dollars summed
      across *every* portfolio submitted that day. This is what you'd actually
      place as a single order at market open.
@@ -93,6 +103,17 @@ export) works exactly the same.
 No trade is ever actually placed — there is no brokerage connection. This
 produces an order sheet for manual execution, by design (see the chat history
 for why: this is a demo, not wired to real money).
+
+### Investopedia links on factor/concept terms
+
+"Quality", "Value", "Growth", "Momentum", "Dividend", and "ESG" are clickable
+links to their Investopedia glossary pages (`ConceptLink` component,
+`INVESTOPEDIA_LINKS` table near the top of `PortfolioBuilder.jsx`).
+**These URLs are unverified** — Investopedia blocks the automated tooling
+this was built with, so they're a best-effort guess from general knowledge,
+not confirmed live. Value/Growth/Momentum/Dividend are old, stable glossary
+terms and very likely correct; Quality and ESG are the least certain. Click
+through each once deployed and fix the table if any land wrong.
 
 ## Architecture
 
@@ -111,6 +132,7 @@ portfolio-demo/
    │  ├─ finnhub.js           Finnhub /quote fetch
    │  └─ twelvedata.js        Twelve Data /quote fetch
    ├─ ai.js                  server-side Claude API call for the AI box
+   ├─ email.js               builds today's workbook + sends it via Resend
    ├─ orders.js              pricing math + Excel workbook generation
    ├─ db.js                  SQLite schema + queries (Node's built-in node:sqlite —
                               deliberately not better-sqlite3, which needs a C++
@@ -120,6 +142,8 @@ portfolio-demo/
    └─ test-quotes-local.mjs  exercises quotes.js's provider fallback/caching/
                               rate-limit logic against a mocked fetch, no
                               network needed
+.github/workflows/
+└─ daily-order-email.yml  cron trigger for the daily email (15:00 UTC)
 ```
 
 **Endpoints:**
@@ -127,10 +151,13 @@ portfolio-demo/
   sizes, and persists a buy list; returns it. Each holding needs both
   `ticker` and `exch` (the exchange code) — the provider symbol mapping
   needs both, not just the ticker alone.
-- `GET /api/daily-orders/summary?date=YYYY-MM-DD` — JSON summary of a day's
-  submissions (defaults to today).
-- `GET /api/daily-orders?date=YYYY-MM-DD` — downloads the combined `.xlsx`
-  for that day.
+- `POST /api/daily-orders/email-report` — builds today's combined-order
+  workbook and emails it to `DAILY_REPORT_EMAIL` via Resend. Meant to be
+  called by the GitHub Actions cron job, not a person — see "Hosting it".
+- `GET /api/daily-orders/summary?date=YYYY-MM-DD` and
+  `GET /api/daily-orders?date=YYYY-MM-DD` — JSON summary / `.xlsx` download
+  for a given day. Not linked from the UI anymore (the email is the intended
+  delivery path); kept as a manual fallback you can hit directly if needed.
 - `POST /api/quotes` — `{ holdings: [{ticker, exch}, ...] }` → raw quotes, no
   persistence. Not currently called by the frontend; kept for debugging.
 - `POST /api/ai/portfolio-config` — `{ prompt, sectors, regions }` → the AI
@@ -166,6 +193,8 @@ login prompt, no custom login page needed).
    - `FINNHUB_API_KEY` — needed for live pricing to work at all
    - `TWELVEDATA_API_KEY` — needed for international holdings to price
    - `ANTHROPIC_API_KEY` — only needed for the AI box
+   - `RESEND_API_KEY` — needed for the daily order email
+   - `DAILY_REPORT_EMAIL` — who receives it (comma-separate for multiple people)
 9. **Create Web Service.** Render builds and deploys automatically, and gives
    you a URL like `https://titan-wealth-xxxx.onrender.com`. Share that URL
    plus the username/password with whoever needs access — never put them in
@@ -174,6 +203,34 @@ login prompt, no custom login page needed).
 
 Every time this branch gets a new commit, Render redeploys automatically —
 no manual redeploy step.
+
+### Setting up the daily email (15:00 UTC)
+
+The email is triggered by a GitHub Actions scheduled workflow
+(`.github/workflows/daily-order-email.yml`) calling the Render service, not
+by anything running inside Render itself — Render's free tier sleeps after
+15 minutes idle, so an in-process timer could just never fire; an external
+trigger fires regardless, and even wakes the service up as a side effect.
+
+1. Get a free key at [resend.com](https://resend.com) — no card needed for
+   the free tier (100 emails/day).
+2. Add `RESEND_API_KEY` and `DAILY_REPORT_EMAIL` to Render's environment
+   variables (step 8 above).
+3. On GitHub: go to the repo → **Settings → Secrets and variables →
+   Actions → New repository secret**, and add three:
+   - `SITE_URL` — your Render URL, e.g. `https://titan-wealth-xxxx.onrender.com`
+     (no trailing slash)
+   - `SITE_USERNAME` — the same value as `SITE_USERNAME` on Render
+   - `SITE_PASSWORD` — the same value as `SITE_PASSWORD` on Render
+4. That's it — the workflow fires automatically at 15:00 UTC daily. To test
+   it immediately instead of waiting: repo → **Actions** tab → "Send daily
+   combined order email" → **Run workflow**. If nothing was bought that day,
+   it correctly sends nothing and reports why in the workflow's log rather
+   than erroring.
+
+If the job ever fails (bad secret, Resend down, etc.), GitHub emails the
+repo's watchers automatically — that failure notification is your alerting
+for this, nothing additional to set up.
 
 **Free tier tradeoffs, worth knowing going in:**
 - The service **spins down after ~15 minutes of no traffic** and takes
@@ -212,12 +269,19 @@ no manual redeploy step.
   minutes, and at true scale (~100 portfolios/day) the daily cap would need
   upgrading to a paid plan.
 - **One shared password, not individual accounts.** Everyone who has the
-  password can do everything — submit buy lists, download the combined order
-  sheet, use the AI box (which spends against your Anthropic API key). Fine
-  for a small trusted group sharing one link; there's no way to tell who did
-  what, and no per-person access revocation short of changing the shared
-  password for everyone.
+  password can do everything — submit buy lists, use the AI box (which
+  spends against your Anthropic API key), and hit the manual-fallback
+  endpoints. Fine for a small trusted group sharing one link; there's no way
+  to tell who did what, and no per-person access revocation short of
+  changing the shared password for everyone.
 - **Trade date = calendar date of submission** (server's UTC date), not
   "next trading session" — a portfolio bought right after Friday's close and
   one bought Saturday would land in different daily sheets even though both
-  execute at the same Monday open. Worth revisiting if this becomes real.
+  execute at the same Monday open. The 15:00 UTC email only catches whatever
+  was submitted *that same UTC day before it fires* — anything bought after
+  15:00 UTC waits for the next day's email. Worth revisiting if this becomes real.
+- **The daily email depends on two external pieces working together**
+  (GitHub Actions actually firing on schedule, and Render's service being
+  reachable/awake when it does) — neither is guaranteed to the minute. If an
+  email doesn't arrive, check the repo's **Actions** tab first; a failed run
+  shows the real error, and GitHub emails watchers automatically on failure.
