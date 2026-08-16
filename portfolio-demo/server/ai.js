@@ -11,11 +11,18 @@ Return exactly this shape:
   "regions": [subset of regions, or [] to mean all],
   "sectors": [subset of sectors, or [] to mean all],
   "qvgm": {"Q":number,"V":number,"G":number,"M":number} (should sum to ~100, reflects emphasis on Quality/Value/Growth/Momentum; use 25/25/25/25 if unspecified),
-  "sectorWeights": {} OR an object covering ANY subset of sectors with numbers (only include this key at all if the user expressed a sector tilt/emphasis; omit or leave {} otherwise),
-  "locWeights": {} OR an object covering ANY subset of regions with numbers (only include if the user expressed a geographic tilt; omit or leave {} otherwise),
+  "sectorWeights": {} OR an object covering EVERY sector listed above with numbers summing to ~100 (only include this key at all if the user expressed any sector emphasis, tilt, or allocation; omit or leave {} otherwise),
+  "locWeights": {} OR an object covering EVERY region listed above with numbers summing to ~100 (only include if the user expressed any geographic emphasis, tilt, or allocation; omit or leave {} otherwise),
   "dividend": {"enabled":bool,"min":number},
   "esg": {"enabled":bool,"min":number}
 }
+
+CRITICAL — do not confuse these two, they do very different things:
+- "regions"/"sectors" are a HARD ELIGIBILITY FILTER: anything left out is 100% excluded from the entire portfolio. Only put something here for absolute exclusion language: "only Europe", "exclude energy", "no exposure to Africa", "US stocks exclusively", "avoid healthcare entirely". Otherwise leave these as [] (meaning nothing is excluded).
+- "sectorWeights"/"locWeights" are TARGET ALLOCATION SHARES — roughly what % of the final portfolio's dollar value should land in each sector/region. Use this field for ANY percentage, majority, half, emphasis, lean, focus, or "mostly/mainly" language, e.g. "50% allocation to Asia", "half in tech", "mostly US with some Europe", "lean toward healthcare", "prioritize Japan". Every region/sector must appear as a key (not just the ones mentioned) and the numbers must sum to ~100 — split the remainder EQUALLY across every region/sector not explicitly mentioned. Do NOT also add the mentioned region/sector to the "regions"/"sectors" exclusion list — an allocation target does not mean everything else is excluded, just smaller.
+
+Worked example (imagine only regions A, B, C, D exist): user says "put 50% into region A". Correct: "regions": [], "locWeights": {"A": 50, "B": 16.7, "C": 16.7, "D": 16.6}. WRONG: "regions": ["A"] (that would give 100% A, not 50%) and WRONG to leave locWeights empty (that would give A no more than an equal 25% share, not 50%).
+
 Infer sensible values. Leave things at neutral defaults if not mentioned (equal QVGM, no sector/location tilt, all regions/sectors included, thresholds disabled). The portfolio always shows the top 10 highest-scoring stocks — there is no holding-count setting.`;
 
 // Cheap + fast is plenty for this — it's structured extraction, not open-ended

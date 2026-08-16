@@ -204,6 +204,95 @@ function applyMinWeight(items, floorPct = 1) {
   return items.map(it => ({ ...it, weight: floorPct + (it.finalScore / rawSum) * remaining }));
 }
 
+// Scales weights so each group (by region or sector) actually lands at its target share of the
+// portfolio, instead of the target only nudging which stocks get picked. Without this, "50%
+// allocation to Asia" only biased scoring toward Asia stocks — the resulting portfolio could still
+// end up far from 50%, or (if combined with a hard region filter by mistake) 100%. Groups with no
+// selected stocks can't be given weight no matter the target — that's a genuine supply limit, not
+// something rebalancing can fix — and the shortfall is absorbed by the other represented groups
+// keeping their relative proportions to each other, via the final renormalization to 100%.
+function rebalanceToTargets(items, groupKey, targets) {
+  if (!items.length) return items;
+  const totals = {};
+  items.forEach(it => { totals[it[groupKey]] = (totals[it[groupKey]] || 0) + it.weight; });
+  const scaled = items.map(it => {
+    const target = targets[it[groupKey]];
+    const current = totals[it[groupKey]];
+    const scale = target != null && current > 0 ? target / current : 1;
+    return { ...it, weight: it.weight * scale };
+  });
+  const sum = scaled.reduce((a, it) => a + it.weight, 0) || 1;
+  return scaled.map(it => ({ ...it, weight: (it.weight / sum) * 100 }));
+}
+
+// Roughly how many distinct names a group needs so rebalanceToTargets isn't forced to concentrate
+// its whole target share into one or two holdings — about one name per 15 points of target share,
+// floor 1, capped at 6 so a thin-supply region/sector doesn't pull in a long tail of mediocre names.
+function neededCountForTarget(targetPct) {
+  return Math.min(6, Math.max(1, Math.ceil(targetPct / 15)));
+}
+
+// The quality bar in step 4 is global and composite-only, so a region/sector that's genuinely
+// thin in this universe (or just didn't crack the top of a wide-open, unfiltered ranking) can end
+// up with zero selected stocks even though the user gave it a real allocation target — leaving
+// rebalanceToTargets nothing to redistribute weight into for that group. This tops the selection
+// up with that group's best available composite scorers (from the full scored universe, not just
+// what already cleared the bar) until it has enough names to carry its target without one or two
+// holdings absorbing all of it.
+function topUpForTarget(selected, universeScored, groupKey, targets) {
+  if (!targets) return selected;
+  const present = new Set(selected.map(stockKey));
+  const byGroup = {};
+  universeScored.forEach(s => { (byGroup[s[groupKey]] ||= []).push(s); });
+  Object.values(byGroup).forEach(list => list.sort((a, b) => b.composite - a.composite));
+
+  const additions = [];
+  Object.entries(targets).forEach(([group, target]) => {
+    if (!(target > 0)) return;
+    const have = selected.filter(s => s[groupKey] === group).length;
+    const need = neededCountForTarget(target) - have;
+    if (need <= 0) return;
+    (byGroup[group] || []).filter(s => !present.has(stockKey(s))).slice(0, need).forEach(c => {
+      additions.push(c);
+      present.add(stockKey(c));
+    });
+  });
+  return additions.length ? [...selected, ...additions] : selected;
+}
+
+// When BOTH region and sector targets are active at once, hitting them both depends on there
+// being enough selected stock that's genuinely in the favored region AND the favored sector —
+// otherwise the two alternating rebalance passes in step 5b just fight each other (observed: a
+// 40% region target collapsed to ~5% under a 60% sector target when nothing selected was both;
+// seeding just a single intersection stock then overshot to ~54%, since IPF had to route the
+// entire weight of both margins through that one name). This seeds several top-composite stocks
+// per (favored region, favored sector) combination — scaled the same way neededCountForTarget
+// scales single-dimension top-up — so weight has more than one name to spread across, before the
+// per-dimension top-up runs. "Favored" means notably above what an equal split across all
+// regions/sectors would give — not every region/sector with a nonzero weight, since equal-split
+// baselines shouldn't each demand their own intersection candidate.
+function topUpForIntersections(selected, universeScored, locWeights, sectorWeights, equalRegionShare, equalSectorShare) {
+  const favoredRegions = Object.entries(locWeights).filter(([, w]) => w > equalRegionShare * 1.3).map(([k]) => k);
+  const favoredSectors = Object.entries(sectorWeights).filter(([, w]) => w > equalSectorShare * 1.3).map(([k]) => k);
+  if (!favoredRegions.length || !favoredSectors.length) return selected;
+
+  const present = new Set(selected.map(stockKey));
+  const additions = [];
+  favoredRegions.forEach(region => {
+    favoredSectors.forEach(sector => {
+      const have = selected.filter(s => s.region === region && s.sector === sector).length;
+      const need = neededCountForTarget(Math.min(locWeights[region], sectorWeights[sector])) - have;
+      if (need <= 0) return;
+      universeScored
+        .filter(s => s.region === region && s.sector === sector && !present.has(stockKey(s)))
+        .sort((a, b) => b.composite - a.composite)
+        .slice(0, need)
+        .forEach(c => { additions.push(c); present.add(stockKey(c)); });
+    });
+  });
+  return additions.length ? [...selected, ...additions] : selected;
+}
+
 function stockKey(s) { return s.exch + ":" + s.ticker; }
 
 // Turns the embedded quarterly price history into the same { rows, periodsPerYear, periodLabel }
@@ -326,26 +415,75 @@ function computePortfolio(p) {
     return { ...s, composite, finalScore };
   });
 
-  scored.sort((a, b) => b.finalScore - a.finalScore);
-
-  // 4. SELECTION — not capped at a fixed count. We include every stock that scores within 15% of
-  // the best match (a genuine quality bar, not an arbitrary cutoff), with a floor of 20 holdings
-  // for diversification even if fewer clear that bar, and a ceiling of 60 so the portfolio never
+  // 4. SELECTION — deliberately gated on the untilted `composite` (QVGM) score, not the
+  // sector/region-tilted `finalScore`. A strong allocation target (e.g. 50% to one region) can
+  // multiply that region's score by 2x+ while dividing everyone else's — if the quality bar were
+  // relative to the tilted score, every other region's best stock could fall below it and get
+  // excluded entirely, defeating the later rebalancing step (nothing left to redistribute weight
+  // into) and silently turning "50% allocation to Asia" into 100%. Gating on raw composite instead
+  // keeps the candidate pool quality-driven and diverse regardless of any tilt; the tilt still
+  // drives WEIGHTING (below) and the allocation-target rebalance actually delivers the requested
+  // split. Not capped at a fixed count — every stock within 15% of the best composite match
+  // qualifies (a genuine quality bar, not an arbitrary cutoff), with a floor of 20 holdings for
+  // diversification even if fewer clear that bar, and a ceiling of 60 so the portfolio never
   // balloons to an unwieldy size. 60 is a ceiling, not a target — most portfolios land well below
   // it; only unusually inclusive filter combinations actually reach it. Only the top 10 by weight
   // are ever shown to the client in the holdings list, but the full portfolio drives the stats,
   // allocation charts, and the actual order ticket.
   const MIN_HOLDINGS = 20, MAX_HOLDINGS = 60;
-  const topScore = scored.length ? scored[0].finalScore : 0;
-  const qualityBar = topScore * 0.85;
-  let selected = scored.filter(s => s.finalScore >= qualityBar);
-  if (selected.length < MIN_HOLDINGS) selected = scored.slice(0, MIN_HOLDINGS);
-  if (selected.length > MAX_HOLDINGS) selected = selected.slice(0, MAX_HOLDINGS);
+  const byComposite = [...scored].sort((a, b) => b.composite - a.composite);
+  const topComposite = byComposite.length ? byComposite[0].composite : 0;
+  const qualityBar = topComposite * 0.85;
+  let selected = scored.filter(s => s.composite >= qualityBar);
+  if (selected.length < MIN_HOLDINGS) selected = byComposite.slice(0, MIN_HOLDINGS);
+
+  // Guarantee minimum representation for any region/sector carrying an explicit allocation
+  // target — see topUpForTarget above. If both dimensions are active, seed region×sector
+  // intersection candidates first (see topUpForIntersections) so the two rebalance passes below
+  // have real stocks to converge on instead of fighting each other. These additions are protected
+  // from the MAX_HOLDINGS trim below (a score-based cut could otherwise remove the very names just
+  // added to satisfy a target).
+  const baseKeys = new Set(selected.map(stockKey));
+  if (p.locPrefEnabled && p.sectorPrefEnabled) {
+    selected = topUpForIntersections(selected, scored, p.locWeights, p.sectorWeights, equalRegionShare, equalSectorShare);
+  }
+  if (p.locPrefEnabled) selected = topUpForTarget(selected, scored, "region", p.locWeights);
+  if (p.sectorPrefEnabled) selected = topUpForTarget(selected, scored, "sector", p.sectorWeights);
+  const toppedUp = selected.filter(s => !baseKeys.has(stockKey(s)));
+
+  if (selected.length > MAX_HOLDINGS) {
+    const toppedUpKeys = new Set(toppedUp.map(stockKey));
+    const trimmable = selected.filter(s => !toppedUpKeys.has(stockKey(s)))
+      .sort((a, b) => b.finalScore - a.finalScore)
+      .slice(0, Math.max(0, MAX_HOLDINGS - toppedUp.length));
+    selected = [...trimmable, ...toppedUp];
+  }
 
   // 5. WEIGHTING — directly proportional to FinalScore (so rank order of weight == rank order of
   // score), with a hard 1% floor per holding. Not shown per-position in the UI, but still drives
   // the weighted portfolio-level stats below.
   selected = applyMinWeight(selected, 1);
+
+  // 5b. ALLOCATION TARGETS — if region/sector preference is active, the tilt above already
+  // skewed which stocks got picked, but rebalance the actual weights on top so "50% to Asia"
+  // really does land at ~50%, not just "somewhat more Asia than an even split". With only one of
+  // region/sector active, a single pass hits its target exactly. With BOTH active, a single
+  // region-then-sector pass doesn't work — the sector pass has no awareness of the region split it
+  // would disturb, and can wipe it out almost entirely (observed: a 40% region target collapsed to
+  // ~5% after an unaware sector pass). Alternating the two passes repeatedly (the same
+  // "raking"/iterative-proportional-fitting idea used to reconcile two sets of margin targets on
+  // one table) converges both margins together far better than one pass each — but when the
+  // universe's supply at that specific intersection is very thin (e.g. only 2 Asia-Pacific
+  // Healthcare stocks exist across all 465 names), it converges to the closest jointly-achievable
+  // split rather than both exact targets; 25 passes vs. 300 produced an identical result in
+  // testing, confirming that gap is a real data ceiling, not slow convergence worth chasing with
+  // more iterations.
+  const REBALANCE_PASSES = p.locPrefEnabled && p.sectorPrefEnabled ? 25 : 1;
+  for (let i = 0; i < REBALANCE_PASSES; i++) {
+    if (p.locPrefEnabled) selected = rebalanceToTargets(selected, "region", p.locWeights);
+    if (p.sectorPrefEnabled) selected = rebalanceToTargets(selected, "sector", p.sectorWeights);
+  }
+
   selected.sort((a, b) => b.weight - a.weight);
 
   // 6. PORTFOLIO STATS
@@ -1421,14 +1559,14 @@ ${list}`;
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))", gap: 20, marginBottom: 20 }}>
-          <FilterCard t={t} heading="Favor a sector" description="Tilt toward industries you like, without fully excluding the rest.">
+          <FilterCard t={t} heading="Favor a sector" description="Set target allocation shares by industry — the portfolio is rebalanced to land close to these percentages, without fully excluding the rest.">
             <PrefRow t={t} label="Set a custom sector lean" enabled={sectorPrefEnabled} onToggle={() => setSectorPrefEnabled(!sectorPrefEnabled)}>
               <WeightGroup t={t} weights={sectorWeights} onChange={setSectorWeights} maxHeight={260} colorFn={k => SECTOR_COLORS[k] || fallbackColor} />
               <ResetButton t={t} onClick={() => { setSectorWeights(equalSplit(SECTORS)); setSectorPrefEnabled(false); }}>Reset</ResetButton>
             </PrefRow>
           </FilterCard>
 
-          <FilterCard t={t} heading="Favor a region" description="Tilt toward regions you want more exposure to, without excluding others.">
+          <FilterCard t={t} heading="Favor a region" description="Set target allocation shares by region — the portfolio is rebalanced to land close to these percentages, without excluding others.">
             <PrefRow t={t} label="Set a custom regional lean" enabled={locPrefEnabled} onToggle={() => setLocPrefEnabled(!locPrefEnabled)}>
               <WeightGroup t={t} weights={locWeights} onChange={setLocWeights} />
               <ResetButton t={t} onClick={() => { setLocWeights(equalSplit(REGIONS)); setLocPrefEnabled(false); }}>Reset</ResetButton>
