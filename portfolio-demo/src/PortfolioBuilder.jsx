@@ -1196,7 +1196,8 @@ ${list}`;
           </div>
           <div style={{ position: "relative", zIndex: 1 }}>
             <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 46, fontWeight: 900, letterSpacing: "-0.03em", lineHeight: 1.05, color: t.textStrong, marginBottom: 14 }}>
-              Build your portfolio
+              Build your{" "}
+              <span style={{ background: `linear-gradient(120deg, ${t.accent}, ${t.teal})`, WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>portfolio</span>
             </div>
             <div style={{ fontSize: 15, color: t.textSecondary, maxWidth: 620, margin: "0 auto", lineHeight: 1.6 }}>
               Tell us what you're looking for and we'll screen {STOCKS.length} stocks to build you a fully diversified portfolio, then show you your top 10 holdings. Everything below is optional — skip anything you're not sure about.
@@ -1210,6 +1211,32 @@ ${list}`;
               ))}
             </div>
           </div>
+        </div>
+
+        {/* ============ STEP FLOW — always visible, so the multi-stage process
+            (pick a path, generate, review) reads as one guided journey rather
+            than an open-ended page of controls. ============ */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 36, flexWrap: "wrap" }}>
+          {["Pick how to start", "Generate your portfolio", "Review & buy"].map((label, i) => {
+            const activeIndex = !buildMode ? 0 : !hasGenerated ? 1 : 2;
+            const done = i < activeIndex, active = i === activeIndex;
+            return (
+              <React.Fragment key={label}>
+                {i > 0 && <div style={{ width: 40, height: 2, background: done ? t.accent : t.border, margin: "0 6px" }} />}
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{
+                    width: 24, height: 24, borderRadius: "50%", flexShrink: 0,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 11.5, fontWeight: 700,
+                    background: done || active ? t.accent : "transparent",
+                    border: `1.5px solid ${done || active ? t.accent : t.borderStrong}`,
+                    color: done || active ? "#FFFFFF" : t.faint,
+                  }}>{done ? "✓" : i + 1}</div>
+                  <span style={{ fontSize: 12.5, fontWeight: active ? 700 : 500, color: active ? t.textStrong : done ? t.textSecondary : t.faint, whiteSpace: "nowrap" }}>{label}</span>
+                </div>
+              </React.Fragment>
+            );
+          })}
         </div>
 
         {/* ============ COLLAPSED FILTERS SUMMARY (shown once a portfolio exists) ============ */}
@@ -1432,6 +1459,13 @@ ${list}`;
         {portfolio && stats && (
           <div ref={resultsRef}>
             <div style={{ textAlign: "center", marginBottom: 24 }}>
+              {/* Small "graphic lines" flourish, after the brand book's fourth visual
+                  pillar — parallel rounded-cap strokes, not just a plain rule. */}
+              <svg width="72" height="10" viewBox="0 0 72 10" style={{ marginBottom: 10 }} aria-hidden="true">
+                <line x1="2" y1="5" x2="26" y2="5" stroke={t.accent} strokeWidth="3" strokeLinecap="round" />
+                <line x1="32" y1="5" x2="50" y2="5" stroke={t.teal} strokeWidth="3" strokeLinecap="round" />
+                <line x1="56" y1="5" x2="70" y2="5" stroke={t.orange} strokeWidth="3" strokeLinecap="round" />
+              </svg>
               <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 28, fontWeight: 800, letterSpacing: "-0.02em", color: t.textStrong, marginBottom: 8 }}>
                 {portfolio.meta ? portfolio.meta.name : "Your portfolio"}
               </div>
@@ -1583,15 +1617,15 @@ ${list}`;
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 24, marginTop: 18 }}>
               {[
-                ["Portfolio holdings", stats.count, ""],
-                ["Avg. dividend yield", stats.avgDiv.toFixed(2), "%"],
-                ["Avg. ESG score", stats.avgESG.toFixed(1), "/100"],
-                ["Cash allocation", stats.cashPct.toFixed(2), "%"],
-                ["Stocks considered", universeSize, ""],
-              ].map(([label, val, unit]) => (
-                <div key={label} className="tw-card-hover" style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: "12px 14px" }}>
+                ["Portfolio holdings", stats.count, "", t.accent],
+                ["Avg. dividend yield", stats.avgDiv.toFixed(2), "%", t.positive],
+                ["Avg. ESG score", stats.avgESG.toFixed(1), "/100", t.teal],
+                ["Cash allocation", stats.cashPct.toFixed(2), "%", t.orange],
+                ["Stocks considered", universeSize, "", t.blueAccent],
+              ].map(([label, val, unit, color]) => (
+                <div key={label} className="tw-card-hover" style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: "12px 14px", borderTop: `2.5px solid ${color}` }}>
                   <div style={{ fontSize: 10.5, color: t.faint, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{label}</div>
-                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 19, color: t.text }}>{val}<span style={{ fontSize: 12, color: t.faint }}>{unit}</span></div>
+                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 20, fontWeight: 600, color: t.textStrong }}>{val}<span style={{ fontSize: 12, fontWeight: 400, color: t.faint }}>{unit}</span></div>
                 </div>
               ))}
             </div>
