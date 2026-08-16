@@ -49,18 +49,22 @@ const fallbackColor = "#6B5F8C";
 // used sparingly per the brand book. Light-mode `orange`/`teal` are darkened
 // off their brand hex to clear WCAG AA text contrast on white — the brand
 // hexes themselves are only bright enough for use as fills/icons there.
+// Dark-mode cards separate from the page mostly via a real, visible border
+// rather than a background-lightness jump — pushing surface fills much
+// lighter than bg starts to look washed-out/gray on a near-black canvas,
+// where a crisp purple border reads as a confident "card" edge instead.
 const THEMES = {
   dark: {
-    bg: "#0A0A0D", surface: "#141019", surface2: "#1C1626", surfaceAlt: "#271B3D",
-    surfaceDeep: "#100C15", surfaceDeepAlt: "#191320",
-    border: "#241F2E", borderStrong: "#3D2A5C", borderMuted: "#2A2433",
+    bg: "#0A0A0D", surface: "#1D1329", surface2: "#281A38", surfaceAlt: "#362447",
+    surfaceDeep: "#120C18", surfaceDeepAlt: "#1B1224",
+    border: "#4A3568", borderStrong: "#6E4CA5", borderMuted: "#2E2138",
     text: "#F1EFF4", textStrong: "#FFFFFF", textSecondary: "#E4DFEC",
-    muted: "#9A93AC", faint: "#87809B", placeholder: "#867F98",
+    muted: "#A79FBE", faint: "#8B84A0", placeholder: "#867F98",
     accent: "#8A3FFC", positive: "#34C77B", negative: "#FF6159",
     blueAccent: "#0F62FE", orange: "#FF832B", teal: "#58F9CA", lavender: "#B79BE0",
-    accentText: "#9B5BFC", blueAccentText: "#3279FE",
+    accentText: "#AB7BFF", blueAccentText: "#3279FE",
     lockBorder: "#1B3B2C", staleBorder: "#3D2410", onAccent: "#0A0A0D",
-    navBg: "rgba(10,10,13,.72)", gridLine: "rgba(183,155,224,.16)",
+    navBg: "rgba(10,10,13,.72)", gridLine: "rgba(183,155,224,.18)",
   },
   light: {
     bg: "#F5F2FA", surface: "#FFFFFF", surface2: "#F1EDF9", surfaceAlt: "#E8DEF5",
@@ -631,7 +635,7 @@ function FilterCard({ heading, description, children, t = THEMES.dark, wide }) {
       background: t.surface, border: `1px solid ${t.border}`, borderRadius: 14,
       padding: "22px 24px", gridColumn: wide ? "1 / -1" : "auto",
     }}>
-      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em", color: t.textStrong, marginBottom: 6 }}>{heading}</div>
+      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 18, fontWeight: 800, letterSpacing: "-0.01em", color: t.textStrong, marginBottom: 6 }}>{heading}</div>
       {description && <div style={{ fontSize: 13, color: t.muted, lineHeight: 1.55, marginBottom: 16, maxWidth: 640 }}>{description}</div>}
       {children}
     </div>
@@ -1085,10 +1089,10 @@ ${list}`;
 
   const GenerateButton = ({ big }) => (
     <button className="tw-btn-primary" onClick={() => generate()} style={{
-      width: big ? "min(420px, 100%)" : "auto", padding: big ? "17px 26px" : "13px 26px", borderRadius: 99,
-      border: `1px solid ${theme === "dark" ? "rgba(216,188,126,.4)" : "rgba(138,63,252,.35)"}`,
-      background: `linear-gradient(135deg, ${t.lavender}, ${t.accent})`, color: "#FFFFFF", fontSize: big ? 15 : 13, fontWeight: 600, cursor: "pointer",
-      fontFamily: "'Inter', sans-serif", letterSpacing: "0.12em", textTransform: "uppercase",
+      width: big ? "min(420px, 100%)" : "auto", padding: big ? "18px 26px" : "13px 26px", borderRadius: 99,
+      border: `1px solid ${t.borderStrong}`,
+      background: `linear-gradient(135deg, ${t.lavender}, ${t.accent})`, color: "#FFFFFF", fontSize: big ? 15 : 13, fontWeight: 800, cursor: "pointer",
+      fontFamily: "'Inter', sans-serif", letterSpacing: "0.1em", textTransform: "uppercase",
     }}>
       {hasGenerated ? "↻ Regenerate portfolio" : "▸ Generate my portfolio"}
     </button>
@@ -1097,7 +1101,7 @@ ${list}`;
   return (
     <div style={{ fontFamily: "'Inter', sans-serif", background: t.bg, color: t.text, minHeight: "100vh", fontSize: 14, transition: "background 0.25s, color 0.25s" }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
         * { box-sizing: border-box; font-variant-numeric: tabular-nums; }
         input[type=range] { -webkit-appearance: none; background: transparent; }
         input[type=range]::-webkit-slider-runnable-track { height: 4px; background: ${t.borderStrong}; border-radius: 4px; }
@@ -1110,14 +1114,6 @@ ${list}`;
         .tw-btn-primary:hover { filter: brightness(1.12); box-shadow: 0 10px 28px -10px rgba(138,63,252,0.55); transform: translateY(-1px); }
         .tw-card-hover { transition: transform .3s cubic-bezier(.2,.6,.2,1), border-color .3s, box-shadow .3s; }
         .tw-card-hover:hover { transform: translateY(-3px); box-shadow: 0 20px 50px -25px rgba(0,0,0,${theme === "dark" ? 0.6 : 0.18}); }
-        .tw-blob { position: absolute; width: 46%; padding-bottom: 46%; border-radius: 50%; filter: blur(50px); opacity: ${theme === "dark" ? 0.5 : 0.35}; }
-        .tw-blob-1 { top: -18%; left: -8%; animation: tw-drift-1 22s ease-in-out infinite alternate; }
-        .tw-blob-2 { top: 10%; right: -12%; animation: tw-drift-2 26s ease-in-out infinite alternate; }
-        .tw-blob-3 { bottom: -22%; left: 28%; animation: tw-drift-3 30s ease-in-out infinite alternate; }
-        @keyframes tw-drift-1 { 0% { transform: translate(0,0) scale(1); } 100% { transform: translate(6%,8%) scale(1.15); } }
-        @keyframes tw-drift-2 { 0% { transform: translate(0,0) scale(1); } 100% { transform: translate(-8%,6%) scale(1.1); } }
-        @keyframes tw-drift-3 { 0% { transform: translate(0,0) scale(1); } 100% { transform: translate(4%,-6%) scale(1.2); } }
-        @media (prefers-reduced-motion: reduce) { .tw-blob { animation: none !important; } }
       `}</style>
 
       {/* ============ TOP NAV ============ */}
@@ -1139,7 +1135,7 @@ ${list}`;
             strokeLinecap="round" strokeDasharray="60 12.2" transform="rotate(-98 15 15)" />
         </svg>
         <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
-          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 16, fontWeight: 800, letterSpacing: "0.01em", color: t.textStrong }}>TITAN</span>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 16, fontWeight: 900, letterSpacing: "0.01em", color: t.textStrong }}>TITAN</span>
           <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 500, color: t.accentText }}>Wealth</span>
         </div>
         <div style={{ width: 1, height: 18, background: t.gridLine, margin: "0 2px" }} />
@@ -1177,22 +1173,41 @@ ${list}`;
 
       <div style={{ maxWidth: 1160, margin: "0 auto", padding: "40px 28px 80px" }}>
 
-        {/* ============ INTRO (moving gradient backdrop, inspired by the Titan Intelligence demo's silk hero) ============ */}
-        <div style={{ position: "relative", textAlign: "center", marginBottom: 36, padding: "48px 20px", overflow: "hidden", borderRadius: 20 }}>
-          <div className="tw-backdrop" aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden", borderRadius: 20 }}>
-            {/* Blobs are the always-present base layer — also the graceful fallback if
-                WebGL isn't available, in which case SilkCanvas just renders nothing. */}
-            <div className="tw-blob tw-blob-1" style={{ background: `radial-gradient(circle, ${t.accent}, transparent 70%)` }} />
-            <div className="tw-blob tw-blob-2" style={{ background: `radial-gradient(circle, ${t.lavender}, transparent 70%)` }} />
-            <div className="tw-blob tw-blob-3" style={{ background: `radial-gradient(circle, ${t.orange}, transparent 70%)` }} />
-            {theme === "dark" && <SilkCanvas />}
+        {/* ============ INTRO — solid brand-purple block, not a low-contrast haze,
+            so the headline stays crisp regardless of what's moving underneath it. ============ */}
+        <div style={{
+          position: "relative", textAlign: "center", marginBottom: 40, padding: "56px 20px", overflow: "hidden",
+          borderRadius: 24, border: `1px solid ${t.borderStrong}`,
+          background: `linear-gradient(135deg, ${t.surfaceDeep} 0%, ${t.surfaceAlt} 100%)`,
+        }}>
+          <div className="tw-backdrop" aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden", borderRadius: 24 }}>
+            {/* Kept as a subtle texture layer, not the dominant visual — full-strength
+                animated noise directly under the headline was the main readability
+                complaint, so this now sits under a solid gradient at low opacity. */}
+            {theme === "dark" && <div style={{ position: "absolute", inset: 0, opacity: 0.3 }}><SilkCanvas /></div>}
+            {/* Open-ring accents echo the logo mark — crisp outlines, not blurred blobs,
+                parked in the corners so they never compete with the text. */}
+            <svg aria-hidden="true" style={{ position: "absolute", top: -30, right: -30, opacity: theme === "dark" ? 0.5 : 0.4 }} width="180" height="180" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="42" fill="none" stroke={t.accent} strokeWidth="2.5" strokeLinecap="round" strokeDasharray="200 64" transform="rotate(-40 50 50)" />
+            </svg>
+            <svg aria-hidden="true" style={{ position: "absolute", bottom: -46, left: -20, opacity: theme === "dark" ? 0.45 : 0.35 }} width="140" height="140" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="42" fill="none" stroke={t.teal} strokeWidth="2.5" strokeLinecap="round" strokeDasharray="160 104" transform="rotate(120 50 50)" />
+            </svg>
           </div>
           <div style={{ position: "relative", zIndex: 1 }}>
-            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 36, fontWeight: 800, letterSpacing: "-0.02em", color: t.textStrong, marginBottom: 10 }}>
+            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 46, fontWeight: 900, letterSpacing: "-0.03em", lineHeight: 1.05, color: t.textStrong, marginBottom: 14 }}>
               Build your portfolio
             </div>
-            <div style={{ fontSize: 14.5, color: t.muted, maxWidth: 620, margin: "0 auto", lineHeight: 1.6 }}>
+            <div style={{ fontSize: 15, color: t.textSecondary, maxWidth: 620, margin: "0 auto", lineHeight: 1.6 }}>
               Tell us what you're looking for and we'll screen {STOCKS.length} stocks to build you a fully diversified portfolio, then show you your top 10 holdings. Everything below is optional — skip anything you're not sure about.
+            </div>
+            <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: "8px 18px", marginTop: 22 }}>
+              {[["Quality", t.accent], ["Value", t.positive], ["Growth", t.teal], ["Momentum", t.blueAccent]].map(([label, color]) => (
+                <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: t.textSecondary }}>
+                  <span style={{ width: 9, height: 9, borderRadius: "50%", background: color, flexShrink: 0 }} />
+                  {label}
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -1214,26 +1229,31 @@ ${list}`;
         <>
         {/* ============ BUILD MODE CHOOSER ============ */}
         <div style={{ marginBottom: 32 }}>
-          <div style={{ textAlign: "center", fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase", color: t.faint, marginBottom: 16 }}>
+          <div style={{ textAlign: "center", fontSize: 13, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: t.textSecondary, marginBottom: 16 }}>
             How do you want to build this portfolio?
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
             {[
-              { key: "describe", icon: "✦", title: "Describe what you want", blurb: "Type it in plain English — we'll set everything up for you." },
-              { key: "template", icon: "▦", title: "Start from a template", blurb: "Pick a ready-made portfolio and tweak it if you like." },
-              { key: "custom", icon: "⚙", title: "Build your own", blurb: "Set every filter and weighting yourself, from scratch." },
+              { key: "describe", icon: "✦", color: t.accent, title: "Describe what you want", blurb: "Type it in plain English — we'll set everything up for you." },
+              { key: "template", icon: "▦", color: t.teal, title: "Start from a template", blurb: "Pick a ready-made portfolio and tweak it if you like." },
+              { key: "custom", icon: "⚙", color: t.orange, title: "Build your own", blurb: "Set every filter and weighting yourself, from scratch." },
             ].map(opt => {
               const active = buildMode === opt.key;
               return (
-                <button key={opt.key} onClick={() => setBuildMode(opt.key)} style={{
-                  textAlign: "left", cursor: "pointer", padding: "20px 20px", borderRadius: 14,
-                  border: active ? `2px solid ${t.accent}` : `1px solid ${t.border}`,
+                <button key={opt.key} onClick={() => setBuildMode(opt.key)} className="tw-card-hover" style={{
+                  textAlign: "left", cursor: "pointer", padding: "22px 22px", borderRadius: 16,
+                  border: active ? `2px solid ${opt.color}` : `1px solid ${t.border}`,
                   background: active ? `linear-gradient(135deg, ${t.surfaceAlt}, ${t.surface2})` : t.surface,
-                  boxShadow: active ? `0 0 0 3px ${t.accent}22` : "none",
-                  transition: "all 0.15s",
+                  boxShadow: active ? `0 0 0 3px ${opt.color}2E` : "none",
+                  transition: "border-color .15s, box-shadow .15s, background .15s",
                 }}>
-                  <div style={{ fontSize: 22, marginBottom: 8, color: active ? t.accentText : t.muted }}>{opt.icon}</div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: active ? t.textStrong : t.text, marginBottom: 4 }}>{opt.title}</div>
+                  <div style={{
+                    width: 38, height: 38, borderRadius: 10, marginBottom: 12,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    background: active ? opt.color : `${opt.color}26`, color: active ? t.onAccent : opt.color,
+                    fontSize: 18, transition: "all .15s",
+                  }}>{opt.icon}</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: "-0.01em", color: active ? t.textStrong : t.text, marginBottom: 4 }}>{opt.title}</div>
                   <div style={{ fontSize: 12.5, color: t.muted, lineHeight: 1.5 }}>{opt.blurb}</div>
                 </button>
               );
@@ -1261,8 +1281,8 @@ ${list}`;
             style={{ width: "100%", background: t.bg, color: t.text, border: `1px solid ${t.surfaceDeepAlt}`, borderRadius: 8, padding: "10px 12px", fontSize: 13.5, fontFamily: "'Inter', sans-serif", resize: "vertical" }}
           />
           <button className="tw-btn-primary" onClick={runAI} disabled={aiLoading || !aiPrompt.trim()} style={{
-            marginTop: 10, padding: "11px 24px", borderRadius: 99, border: "none",
-            background: aiLoading ? t.borderMuted : `linear-gradient(135deg, ${t.lavender}, ${t.accent})`, color: "#FFFFFF", fontSize: 12.5, fontWeight: 600,
+            marginTop: 10, padding: "12px 24px", borderRadius: 99, border: "none",
+            background: aiLoading ? t.borderMuted : `linear-gradient(135deg, ${t.lavender}, ${t.accent})`, color: "#FFFFFF", fontSize: 12.5, fontWeight: 800,
             letterSpacing: "0.08em", textTransform: "uppercase",
             cursor: aiLoading || !aiPrompt.trim() ? "default" : "pointer", opacity: !aiPrompt.trim() ? 0.5 : 1,
           }}>
@@ -1659,8 +1679,8 @@ ${list}`;
                   approximate snapshot, not a licensed real-time feed.
                 </div>
                 <button className="tw-btn-primary" onClick={fetchLiveData} disabled={liveLoading || selected.length === 0} style={{
-                  padding: "10px 20px", borderRadius: 99, border: "none", cursor: liveLoading ? "default" : "pointer",
-                  background: liveLoading ? t.borderStrong : `linear-gradient(135deg, ${t.blueAccent}, ${t.accent})`, color: "#FFFFFF", fontWeight: 600, fontSize: 12,
+                  padding: "11px 20px", borderRadius: 99, border: "none", cursor: liveLoading ? "default" : "pointer",
+                  background: liveLoading ? t.borderStrong : `linear-gradient(135deg, ${t.blueAccent}, ${t.accent})`, color: "#FFFFFF", fontWeight: 800, fontSize: 12,
                   letterSpacing: "0.06em", textTransform: "uppercase",
                 }}>
                   {liveLoading ? "Fetching live data…" : Object.keys(liveData).length ? "↻ Refresh live data" : "⛁ Fetch live market data"}
@@ -1723,9 +1743,9 @@ ${list}`;
                     onChange={e => setPortfolioValue(Math.max(0, parseFloat(e.target.value) || 0))}
                     style={{ width: 120, background: t.surface2, color: t.text, border: `1px solid ${t.borderStrong}`, borderRadius: 6, padding: "7px 9px", fontFamily: "'IBM Plex Mono', monospace", fontSize: 12.5 }} />
                   <button className="tw-btn-primary" onClick={lockPortfolio} disabled={buyLoading || selected.length === 0} style={{
-                    padding: "10px 20px", borderRadius: 99, border: "none", cursor: buyLoading ? "default" : "pointer",
+                    padding: "11px 20px", borderRadius: 99, border: "none", cursor: buyLoading ? "default" : "pointer",
                     background: buyLoading ? t.borderStrong : `linear-gradient(135deg, ${t.positive}, #1a8f5c)`, color: "#FFFFFF",
-                    fontWeight: 600, fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase",
+                    fontWeight: 800, fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase",
                   }}>{buyLoading ? "Pricing & saving…" : "🔒 Buy portfolio"}</button>
                 </div>
                 {buyError && <div style={{ fontSize: 11.5, color: t.negative, marginTop: 10, lineHeight: 1.5, wordBreak: "break-word" }}>{buyError}</div>}
