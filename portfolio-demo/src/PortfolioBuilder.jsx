@@ -1116,15 +1116,21 @@ ${list}`;
         .tw-card-hover:hover { transform: translateY(-3px); box-shadow: 0 20px 50px -25px rgba(0,0,0,${theme === "dark" ? 0.6 : 0.18}); }
       `}</style>
 
+      {/* ============ UTILITY STRIP — a thin dark bar above the nav, after the
+          persistent charcoal strip on the real Titan Wealth corporate site. ============ */}
+      <div style={{ background: "#1C1720", color: "#B8AECC", fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", textAlign: "center", padding: "6px 12px" }}>
+        Demo · Synthetic Data — nothing here is a real trade
+      </div>
+
       {/* ============ TOP NAV ============ */}
       <div style={{
         position: "sticky", top: 0, zIndex: 50, display: "flex", alignItems: "center", gap: 14,
-        padding: "12px 20px", background: t.navBg, backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)",
+        padding: "14px 20px", background: t.navBg, backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)",
         borderBottom: `1px solid ${t.gridLine}`,
       }}>
         {/* Open-ring mark, after the real Titan Wealth logo — a broken circle
             in Empowered Purple sitting beside the wordmark, not a filled badge. */}
-        <svg width="26" height="26" viewBox="0 0 30 30" style={{ flexShrink: 0 }}>
+        <svg width="30" height="30" viewBox="0 0 30 30" style={{ flexShrink: 0 }}>
           <defs>
             <linearGradient id={`tw-ring-${theme}`} x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stopColor={theme === "dark" ? "#B79BE0" : "#8A3FFC"} />
@@ -1134,36 +1140,33 @@ ${list}`;
           <circle cx="15" cy="15" r="11.5" fill="none" stroke={`url(#tw-ring-${theme})`} strokeWidth="3.2"
             strokeLinecap="round" strokeDasharray="60 12.2" transform="rotate(-98 15 15)" />
         </svg>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
-          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 16, fontWeight: 900, letterSpacing: "0.01em", color: t.textStrong }}>TITAN</span>
-          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 500, color: t.accentText }}>Wealth</span>
+        <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.05 }}>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 17, fontWeight: 900, letterSpacing: "0.01em", color: t.textStrong }}>TITAN</span>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 500, color: t.muted }}>Wealth</span>
         </div>
-        <div style={{ width: 1, height: 18, background: t.gridLine, margin: "0 2px" }} />
-        <span style={{ fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: t.muted }}>Portfolio Screen</span>
+        <div style={{ width: 1, height: 22, background: t.gridLine, margin: "0 4px" }} />
+        <span style={{ fontSize: 13, fontWeight: 600, color: t.textSecondary }}>Portfolio Screen</span>
 
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ fontSize: 10.5, letterSpacing: "0.14em", textTransform: "uppercase", border: `1px solid ${t.gridLine}`, borderRadius: 99, padding: "5px 12px", color: t.lavender, whiteSpace: "nowrap" }}>
-            Demo · Synthetic Data
-          </span>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 16 }}>
           <button
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             aria-label="Toggle light and dark mode"
             style={{
-              display: "flex", alignItems: "center", gap: 7, padding: "7px 14px", borderRadius: 99,
-              border: `1px solid ${t.borderStrong}`, background: "transparent", color: t.textSecondary,
-              fontSize: 11.5, letterSpacing: "0.06em", cursor: "pointer", transition: "all 0.2s",
+              display: "flex", alignItems: "center", gap: 7, padding: "9px 18px", borderRadius: 99,
+              border: "none", background: t.accent, color: "#FFFFFF",
+              fontSize: 12.5, fontWeight: 700, cursor: "pointer", transition: "filter 0.2s",
             }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.background = "rgba(138,63,252,0.1)"; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = t.borderStrong; e.currentTarget.style.background = "transparent"; }}
+            onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.1)"; }}
+            onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}
           >
             {theme === "dark" ? (
               <>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.orange} strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4.5" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4.5" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
                 Light mode
               </>
             ) : (
               <>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill={t.accent} stroke="none"><path d="M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a7 7 0 0 0 11 11z" /></svg>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="#FFFFFF" stroke="none"><path d="M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a7 7 0 0 0 11 11z" /></svg>
                 Dark mode
               </>
             )}
@@ -1173,43 +1176,64 @@ ${list}`;
 
       <div style={{ maxWidth: 1160, margin: "0 auto", padding: "40px 28px 80px" }}>
 
-        {/* ============ INTRO — solid brand-purple block, not a low-contrast haze,
-            so the headline stays crisp regardless of what's moving underneath it. ============ */}
+        {/* ============ INTRO — after the real Titan Wealth site's hero: a light,
+            mostly-white canvas (dark mode gets the deep-purple block instead,
+            matching their "What has changed?" section) with big flowing
+            line-art sweeping through, not a moody gradient haze. ============ */}
         <div style={{
-          position: "relative", textAlign: "center", marginBottom: 40, padding: "56px 20px", overflow: "hidden",
-          borderRadius: 24, border: `1px solid ${t.borderStrong}`,
-          background: `linear-gradient(135deg, ${t.surfaceDeep} 0%, ${t.surfaceAlt} 100%)`,
+          position: "relative", textAlign: "center", marginBottom: 40, padding: "60px 20px", overflow: "hidden",
+          borderRadius: 24, border: `1px solid ${theme === "dark" ? t.borderStrong : t.border}`,
+          background: theme === "dark" ? `linear-gradient(135deg, ${t.surfaceDeep} 0%, ${t.surfaceAlt} 100%)` : t.surface,
         }}>
           <div className="tw-backdrop" aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden", borderRadius: 24 }}>
-            {/* Kept as a subtle texture layer, not the dominant visual — full-strength
-                animated noise directly under the headline was the main readability
-                complaint, so this now sits under a solid gradient at low opacity. */}
-            {theme === "dark" && <div style={{ position: "absolute", inset: 0, opacity: 0.3 }}><SilkCanvas /></div>}
-            {/* Open-ring accents echo the logo mark — crisp outlines, not blurred blobs,
-                parked in the corners so they never compete with the text. */}
-            <svg aria-hidden="true" style={{ position: "absolute", top: -30, right: -30, opacity: theme === "dark" ? 0.5 : 0.4 }} width="180" height="180" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="42" fill="none" stroke={t.accent} strokeWidth="2.5" strokeLinecap="round" strokeDasharray="200 64" transform="rotate(-40 50 50)" />
-            </svg>
-            <svg aria-hidden="true" style={{ position: "absolute", bottom: -46, left: -20, opacity: theme === "dark" ? 0.45 : 0.35 }} width="140" height="140" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="42" fill="none" stroke={t.teal} strokeWidth="2.5" strokeLinecap="round" strokeDasharray="160 104" transform="rotate(120 50 50)" />
+            {theme === "dark" && <div style={{ position: "absolute", inset: 0, opacity: 0.25 }}><SilkCanvas /></div>}
+            {/* Big flowing line-art sweep, after the three parallel curved
+                strokes on the real site's hero — the fourth brand pillar
+                ("Graphic Lines") used at full scale instead of tucked in a corner. */}
+            <svg aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} viewBox="0 0 1160 340" preserveAspectRatio="xMidYMid slice">
+              <defs>
+                <linearGradient id={`tw-sweep-${theme}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor={t.lavender} />
+                  <stop offset="100%" stopColor={t.accent} />
+                </linearGradient>
+              </defs>
+              {[-24, 0, 24].map((dy, i) => (
+                <path key={i}
+                  d={`M 140 ${10 + dy} C 320 ${10 + dy}, 380 ${300 + dy}, 560 ${300 + dy} C 740 ${300 + dy}, 800 ${10 + dy}, 1020 ${10 + dy}`}
+                  fill="none" stroke={i === 1 ? t.accent : `url(#tw-sweep-${theme})`} strokeWidth="9" strokeLinecap="round"
+                  opacity={theme === "dark" ? 0.4 : 0.5}
+                />
+              ))}
             </svg>
           </div>
           <div style={{ position: "relative", zIndex: 1 }}>
-            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 46, fontWeight: 900, letterSpacing: "-0.03em", lineHeight: 1.05, color: t.textStrong, marginBottom: 14 }}>
-              Build your{" "}
-              <span style={{ background: `linear-gradient(120deg, ${t.accent}, ${t.teal})`, WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>portfolio</span>
+            <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: t.accentText, marginBottom: 10 }}>
+              Portfolio Builder
             </div>
-            <div style={{ fontSize: 15, color: t.textSecondary, maxWidth: 620, margin: "0 auto", lineHeight: 1.6 }}>
+            <div style={{
+              display: "inline-block", fontFamily: "'Inter', sans-serif", fontSize: 46, fontWeight: 900, letterSpacing: "-0.03em", lineHeight: 1.05, marginBottom: 14,
+              color: t.textStrong, padding: "6px 18px", borderRadius: 16,
+              background: theme === "dark" ? "transparent" : "rgba(255,255,255,0.82)",
+              backdropFilter: theme === "dark" ? "none" : "blur(2px)",
+            }}>
+              Build your portfolio
+            </div>
+            <div style={{
+              fontSize: 15, color: t.textSecondary, maxWidth: 620, margin: "0 auto", lineHeight: 1.6,
+              padding: theme === "dark" ? 0 : "4px 14px", borderRadius: 12,
+              background: theme === "dark" ? "transparent" : "rgba(255,255,255,0.82)",
+            }}>
               Tell us what you're looking for and we'll screen {STOCKS.length} stocks to build you a fully diversified portfolio, then show you your top 10 holdings. Everything below is optional — skip anything you're not sure about.
             </div>
             <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: "8px 18px", marginTop: 22 }}>
               {[["Quality", t.accent], ["Value", t.positive], ["Growth", t.teal], ["Momentum", t.blueAccent]].map(([label, color]) => (
-                <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: t.textSecondary }}>
+                <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: t.textSecondary, background: theme === "dark" ? "transparent" : "rgba(255,255,255,0.82)", borderRadius: 99, padding: theme === "dark" ? 0 : "3px 9px" }}>
                   <span style={{ width: 9, height: 9, borderRadius: "50%", background: color, flexShrink: 0 }} />
                   {label}
                 </div>
               ))}
             </div>
+            <div style={{ marginTop: 18, color: t.orange, fontSize: 18 }} aria-hidden="true">↓</div>
           </div>
         </div>
 
@@ -1615,17 +1639,24 @@ ${list}`;
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 24, marginTop: 18 }}>
+            {/* Rising-arrow stat row, after the "Our experience" section on the
+                real Titan Wealth site — each figure grows out of a thin line
+                instead of sitting in a plain bordered tile. */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 16, marginBottom: 28, marginTop: 18 }}>
               {[
-                ["Portfolio holdings", stats.count, "", t.accent],
-                ["Avg. dividend yield", stats.avgDiv.toFixed(2), "%", t.positive],
-                ["Avg. ESG score", stats.avgESG.toFixed(1), "/100", t.teal],
-                ["Cash allocation", stats.cashPct.toFixed(2), "%", t.orange],
-                ["Stocks considered", universeSize, "", t.blueAccent],
-              ].map(([label, val, unit, color]) => (
-                <div key={label} className="tw-card-hover" style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: "12px 14px", borderTop: `2.5px solid ${color}` }}>
-                  <div style={{ fontSize: 10.5, color: t.faint, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{label}</div>
-                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 20, fontWeight: 600, color: t.textStrong }}>{val}<span style={{ fontSize: 12, fontWeight: 400, color: t.faint }}>{unit}</span></div>
+                ["Portfolio holdings", stats.count, "", t.accent, 44],
+                ["Avg. dividend yield", stats.avgDiv.toFixed(2), "%", t.positive, 30],
+                ["Avg. ESG score", stats.avgESG.toFixed(1), "/100", t.teal, 52],
+                ["Cash allocation", stats.cashPct.toFixed(2), "%", t.orange, 26],
+                ["Stocks considered", universeSize, "", t.blueAccent, 38],
+              ].map(([label, val, unit, color, h]) => (
+                <div key={label} style={{ display: "flex", flexDirection: "column" }}>
+                  <svg width="16" height="60" viewBox="0 0 16 60" aria-hidden="true" style={{ marginBottom: 8 }}>
+                    <line x1="8" y1="60" x2="8" y2={60 - h + 10} stroke={color} strokeWidth="2.5" strokeLinecap="round" />
+                    <path d={`M 3 ${60 - h + 14} L 8 ${60 - h + 5} L 13 ${60 - h + 14}`} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 22, fontWeight: 800, color: t.textStrong }}>{val}<span style={{ fontSize: 12, fontWeight: 400, color: t.faint }}>{unit}</span></div>
+                  <div style={{ fontSize: 10.5, color: t.muted, textTransform: "uppercase", letterSpacing: "0.05em", marginTop: 4 }}>{label}</div>
                 </div>
               ))}
             </div>
