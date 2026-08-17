@@ -12,6 +12,16 @@ const CORPORATE_BONDS = BONDS.filter(b => b.govCorp === "Corporate");
 const CORPORATE_REGIONS = [...new Set(CORPORATE_BONDS.map(b => b.region))].sort();
 const CORPORATE_SECTORS = [...new Set(CORPORATE_BONDS.map(b => b.sector))].sort();
 
+// Fixed S&P/Fitch-style rating bands, independent of what's currently in bondData.js — the
+// placeholder dataset has no rating field at all, so every bond falls into "NR" (not rated) until
+// the official list (which will include real ratings) replaces it. Defined as a fixed scale rather
+// than derived from the data (unlike CORPORATE_REGIONS/SECTORS above) precisely so the filter is
+// ready and correct the moment real ratings land, with no code change needed.
+const RATING_BANDS = ["AAA", "AA", "A", "BBB", "BB", "B", "CCC & below", "NR"];
+function ratingBand(b) {
+  return b.rating || "NR";
+}
+
 /* ============================== THEME (same palette as the equity Portfolio Builder) ============================== */
 const THEMES = {
   dark: {
@@ -61,22 +71,22 @@ const TEMPLATES = [
   {
     name: "Short-Duration Corporate Income",
     blurb: "Corporate bonds under 4 years duration — income with lower sensitivity to rate moves.",
-    config: { regions: [], sectors: [], ytmMin: YTM_MIN, ytmMax: YTM_MAX, durationMin: DURATION_MIN, durationMax: 4 },
+    config: { regions: [], sectors: [], ratings: [], ytmMin: YTM_MIN, ytmMax: YTM_MAX, durationMin: DURATION_MIN, durationMax: 4 },
   },
   {
     name: "UK & European Corporate",
     blurb: "Corporate bonds from UK and European issuers, across the full yield and duration range.",
-    config: { regions: ["UK", "Europe"], sectors: [], ytmMin: YTM_MIN, ytmMax: YTM_MAX, durationMin: DURATION_MIN, durationMax: DURATION_MAX },
+    config: { regions: ["UK", "Europe"], sectors: [], ratings: [], ytmMin: YTM_MIN, ytmMax: YTM_MAX, durationMin: DURATION_MIN, durationMax: DURATION_MAX },
   },
   {
     name: "Technology & Communications",
     blurb: "Corporate bonds from technology and communications issuers only.",
-    config: { regions: [], sectors: ["Technology", "Communications"], ytmMin: YTM_MIN, ytmMax: YTM_MAX, durationMin: DURATION_MIN, durationMax: DURATION_MAX },
+    config: { regions: [], sectors: ["Technology", "Communications"], ratings: [], ytmMin: YTM_MIN, ytmMax: YTM_MAX, durationMin: DURATION_MIN, durationMax: DURATION_MAX },
   },
   {
     name: "Diversified Corporate Core",
     blurb: "A broad, balanced blend of corporate bonds across every region and sector in the universe.",
-    config: { regions: [], sectors: [], ytmMin: YTM_MIN, ytmMax: YTM_MAX, durationMin: DURATION_MIN, durationMax: DURATION_MAX },
+    config: { regions: [], sectors: [], ratings: [], ytmMin: YTM_MIN, ytmMax: YTM_MAX, durationMin: DURATION_MIN, durationMax: DURATION_MAX },
   },
 ];
 
@@ -89,6 +99,7 @@ function passesFilters(b, p) {
   if (b.currency !== "GBP") return false;
   if (!p.regionFilter.has(b.region)) return false;
   if (!p.sectorFilter.has(b.sector)) return false;
+  if (!p.ratingFilter.has(ratingBand(b))) return false;
   if (b.ytm < p.ytmMin || b.ytm > p.ytmMax) return false;
   if (b.duration < p.durationMin || b.duration > p.durationMax) return false;
   return true;
@@ -120,7 +131,7 @@ function describeBondPortfolio(p, stats) {
   nameBits.push("Corporate Bond Portfolio");
   const name = nameBits.join(" ");
 
-  const blurb = `A ${stats.count}-bond, equally-weighted portfolio of GBP corporate bonds yielding ${stats.wYtm.toFixed(2)}% with ${stats.wDuration.toFixed(1)}-year average duration. Every bond that clears your region, sector, YTM and duration filters is included — no preference weighting is applied.`;
+  const blurb = `A ${stats.count}-bond, equally-weighted portfolio of GBP corporate bonds yielding ${stats.wYtm.toFixed(2)}% with ${stats.wDuration.toFixed(1)}-year average duration. Every bond that clears your region, sector, rating, YTM and duration filters is included — no preference weighting is applied.`;
   return { name, blurb };
 }
 
@@ -424,6 +435,7 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
 
   const [regionFilter, setRegionFilter] = useState(new Set(CORPORATE_REGIONS));
   const [sectorFilter, setSectorFilter] = useState(new Set(CORPORATE_SECTORS));
+  const [ratingFilter, setRatingFilter] = useState(new Set(RATING_BANDS));
   const [ytmMin, setYtmMin] = useState(YTM_MIN);
   const [ytmMax, setYtmMax] = useState(YTM_MAX);
   const [durationMin, setDurationMin] = useState(DURATION_MIN);
@@ -448,8 +460,8 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
   const markDirty = () => setActiveTemplate(null);
 
   const filterParams = useMemo(() => ({
-    regionFilter, sectorFilter, ytmMin, ytmMax, durationMin, durationMax,
-  }), [regionFilter, sectorFilter, ytmMin, ytmMax, durationMin, durationMax]);
+    regionFilter, sectorFilter, ratingFilter, ytmMin, ytmMax, durationMin, durationMax,
+  }), [regionFilter, sectorFilter, ratingFilter, ytmMin, ytmMax, durationMin, durationMax]);
 
   const liveEligible = useMemo(() => BONDS.filter(b => passesFilters(b, filterParams)).length, [filterParams]);
 
@@ -463,6 +475,7 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
     setActiveTemplate(tpl.name);
     setRegionFilter(c.regions.length ? new Set(c.regions) : new Set(CORPORATE_REGIONS));
     setSectorFilter(c.sectors.length ? new Set(c.sectors) : new Set(CORPORATE_SECTORS));
+    setRatingFilter(c.ratings?.length ? new Set(c.ratings) : new Set(RATING_BANDS));
     setYtmMin(c.ytmMin);
     setYtmMax(c.ytmMax);
     setDurationMin(c.durationMin);
@@ -473,6 +486,7 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
     setActiveTemplate(null);
     setRegionFilter(new Set(CORPORATE_REGIONS));
     setSectorFilter(new Set(CORPORATE_SECTORS));
+    setRatingFilter(new Set(RATING_BANDS));
     setYtmMin(YTM_MIN);
     setYtmMax(YTM_MAX);
     setDurationMin(DURATION_MIN);
@@ -492,6 +506,14 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
     setSectorFilter(prev => {
       const next = new Set(prev);
       if (next.has(s)) next.delete(s); else next.add(s);
+      return next.size ? next : prev;
+    });
+  }
+  function toggleRating(r) {
+    markDirty();
+    setRatingFilter(prev => {
+      const next = new Set(prev);
+      if (next.has(r)) next.delete(r); else next.add(r);
       return next.size ? next : prev;
     });
   }
@@ -704,8 +726,9 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
         </div>
 
         <div style={{ fontSize: 12, color: t.faint, textAlign: "center", marginBottom: 20, maxWidth: 700, marginLeft: "auto", marginRight: "auto", lineHeight: 1.5 }}>
-          Corporate issuers only, priced in GBP, and no credit-rating filter — the source data has
-          no rating column, so nothing here shows a rating that isn't independently verified.
+          Corporate issuers only, priced in GBP. The credit rating filter is live, but the current
+          placeholder data has no rating column — every bond shows as "NR" (not rated) until the
+          official list with real ratings replaces it, at which point this filter works automatically.
         </div>
 
         {/* ============ FILTERS ============ */}
@@ -728,6 +751,15 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
                 <Chip key={s} t={t} active={sectorFilter.has(s)} onClick={() => toggleSector(s)}>{s}</Chip>
               ))}
             </div>
+          </FilterCard>
+
+          <FilterCard t={t} heading="Credit rating" wide description="Which issuer credit rating bands can appear in your portfolio — all placeholder bonds are currently unrated (NR) until the official list arrives.">
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+              <ResetButton t={t} onClick={() => { markDirty(); setRatingFilter(new Set(RATING_BANDS)); }}>Select all</ResetButton>
+            </div>
+            <div>{RATING_BANDS.map(r => (
+              <Chip key={r} t={t} active={ratingFilter.has(r)} onClick={() => toggleRating(r)}>{r}</Chip>
+            ))}</div>
           </FilterCard>
 
           <FilterCard t={t} heading={<ConceptLink t={t} term="Yield to maturity">Yield to maturity (YTM)</ConceptLink>} wide
