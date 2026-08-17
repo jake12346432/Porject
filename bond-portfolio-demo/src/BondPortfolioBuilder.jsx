@@ -3,6 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import {
   BONDS, REGIONS, SECTORS, GOV_CORP_TYPES, YTM_MIN, YTM_MAX, DURATION_MIN, DURATION_MAX,
 } from "./bondData.js";
+import { getAIBondPortfolioConfig } from "./api.js";
 
 /* ============================== THEME (same palette as the equity Portfolio Builder) ============================== */
 const THEMES = {
@@ -117,6 +118,25 @@ function redistribute(current, key, rawVal, decimals = 0) {
     next[target] = Math.max(0, Math.min(100, Math.round((next[target] + drift) * mult) / mult));
   }
   return next;
+}
+
+// Normalizes an arbitrary (possibly partial/invalid) weight object — e.g. straight from the AI's
+// JSON response — onto a fixed key set, summing to 100. Never trust a model's arithmetic.
+function normalizeWeights(obj, keys) {
+  const vals = keys.map(k => {
+    const v = obj && typeof obj[k] === "number" && obj[k] >= 0 ? obj[k] : 0;
+    return v;
+  });
+  const sum = vals.reduce((a, b) => a + b, 0);
+  if (sum <= 0) {
+    const eq = Math.round((100 / keys.length) * 10) / 10;
+    return Object.fromEntries(keys.map(k => [k, eq]));
+  }
+  const out = {};
+  keys.forEach((k, i) => { out[k] = Math.round((vals[i] / sum) * 1000) / 10; });
+  const drift = Math.round((100 - Object.values(out).reduce((a, b) => a + b, 0)) * 10) / 10;
+  out[keys[0]] += drift;
+  return out;
 }
 
 // Every selected bond gets >= floorPct weight; the remainder is distributed by composite score.
@@ -542,7 +562,13 @@ export default function BondPortfolioBuilder() {
   const [isStale, setIsStale] = useState(false);
   const resultsRef = useRef(null);
 
-  const markDirty = () => setActiveTemplate(null);
+  // Describe-your-portfolio AI box
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState(null);
+  const [aiApplied, setAiApplied] = useState(false);
+
+  const markDirty = () => { setActiveTemplate(null); setAiApplied(false); };
 
   const filterParams = useMemo(() => ({
     regionFilter, sectorFilter, govCorpFilter, ytmMin, ytmMax, durationMin, durationMax, objective,
@@ -558,6 +584,7 @@ export default function BondPortfolioBuilder() {
   function applyTemplate(tpl) {
     const c = tpl.config;
     setActiveTemplate(tpl.name);
+    setAiApplied(false);
     setRegionFilter(c.regions.length ? new Set(c.regions) : new Set(REGIONS));
     setSectorFilter(c.sectors.length ? new Set(c.sectors) : new Set(SECTORS));
     setGovCorpFilter(c.govCorp);
@@ -568,8 +595,49 @@ export default function BondPortfolioBuilder() {
     setObjective(c.objective);
   }
 
+  // Applies an arbitrary (possibly untrusted-shape) config — from the AI box — onto the same
+  // always-visible filter state templates use, clamping every field to this universe's real
+  // bounds so a malformed or over-eager model response can't produce an invalid range (e.g.
+  // ytmMin > ytmMax, or a region that doesn't exist in this data set).
+  function applyAIConfig(cfg) {
+    setActiveTemplate(null);
+    const newRegions = Array.isArray(cfg.regions) ? cfg.regions.filter(r => REGIONS.includes(r)) : [];
+    const newSectors = Array.isArray(cfg.sectors) ? cfg.sectors.filter(s => SECTORS.includes(s)) : [];
+    setRegionFilter(newRegions.length ? new Set(newRegions) : new Set(REGIONS));
+    setSectorFilter(newSectors.length ? new Set(newSectors) : new Set(SECTORS));
+    setGovCorpFilter(["All", ...GOV_CORP_TYPES].includes(cfg.govCorp) ? cfg.govCorp : "All");
+
+    const clamp = (v, lo, hi, fallback) => (typeof v === "number" && isFinite(v) ? Math.max(lo, Math.min(hi, v)) : fallback);
+    let ym = clamp(cfg.ytmMin, YTM_MIN, YTM_MAX, YTM_MIN);
+    let yM = clamp(cfg.ytmMax, YTM_MIN, YTM_MAX, YTM_MAX);
+    if (ym > yM) [ym, yM] = [yM, ym];
+    setYtmMin(ym); setYtmMax(yM);
+
+    let dm = clamp(cfg.durationMin, DURATION_MIN, DURATION_MAX, DURATION_MIN);
+    let dM = clamp(cfg.durationMax, DURATION_MIN, DURATION_MAX, DURATION_MAX);
+    if (dm > dM) [dm, dM] = [dM, dm];
+    setDurationMin(dm); setDurationMax(dM);
+
+    setObjective(normalizeWeights(cfg.objective, ["Y", "S"]));
+    setAiApplied(true);
+  }
+
+  async function runAI() {
+    if (!aiPrompt.trim() || aiLoading) return;
+    setAiLoading(true); setAiError(null); setAiApplied(false);
+    try {
+      const cfg = await getAIBondPortfolioConfig({ prompt: aiPrompt });
+      applyAIConfig(cfg);
+    } catch (err) {
+      setAiError(err.message || "Couldn't turn that into a portfolio config — try rephrasing, or adjust the filters manually below.");
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
   function resetAll() {
     setActiveTemplate(null);
+    setAiApplied(false);
     setRegionFilter(new Set(REGIONS));
     setSectorFilter(new Set(SECTORS));
     setGovCorpFilter("All");
@@ -747,8 +815,33 @@ export default function BondPortfolioBuilder() {
           </div>
         </div>
 
+        {/* ============ DESCRIBE WHAT YOU WANT (AI) ============ */}
+        <SectionLabel t={t} sub="Type it in plain English — we'll set the filters below for you. You can still edit anything afterward, same as with a template.">✦ Describe what you want</SectionLabel>
+        <div style={{ marginBottom: 30, padding: 24, background: t.surfaceDeep, border: `1px solid ${t.surfaceDeepAlt}`, borderRadius: 14 }}>
+          <textarea
+            value={aiPrompt} onChange={e => setAiPrompt(e.target.value)}
+            placeholder='e.g. "Short-duration emerging markets government bonds for income" or "Safe, stable US corporate bonds, low rate sensitivity"'
+            rows={3}
+            style={{ width: "100%", background: t.bg, color: t.text, border: `1px solid ${t.surfaceDeepAlt}`, borderRadius: 8, padding: "10px 12px", fontSize: 13.5, fontFamily: "'Inter', sans-serif", resize: "vertical" }}
+          />
+          <button onClick={runAI} disabled={aiLoading || !aiPrompt.trim()} style={{
+            marginTop: 10, padding: "12px 24px", borderRadius: 99, border: "none",
+            background: aiLoading ? t.borderMuted : `linear-gradient(135deg, ${t.lavender}, ${t.accent})`, color: "#FFFFFF", fontSize: 12.5, fontWeight: 800,
+            letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: "'Inter', sans-serif",
+            cursor: aiLoading || !aiPrompt.trim() ? "default" : "pointer", opacity: !aiPrompt.trim() ? 0.5 : 1,
+          }}>
+            {aiLoading ? "Thinking…" : "Apply to filters"}
+          </button>
+          {aiError && <div style={{ fontSize: 12, color: t.negative, marginTop: 8 }}>{aiError}</div>}
+          {aiApplied && !aiError && (
+            <div style={{ fontSize: 12, color: t.positive, marginTop: 8 }}>
+              Applied to the filters below — tweak anything you like, then click Generate.
+            </div>
+          )}
+        </div>
+
         {/* ============ TEMPLATES ============ */}
-        <SectionLabel t={t} sub="Prefill every filter below with a ready-made strategy — tweak anything afterward.">Quick start — or build your own below</SectionLabel>
+        <SectionLabel t={t} sub="Prefill every filter below with a ready-made strategy — tweak anything afterward.">Or start from a template</SectionLabel>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14, marginBottom: 12 }}>
           {TEMPLATES.map(tpl => {
             const active = activeTemplate === tpl.name;

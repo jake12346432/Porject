@@ -5,11 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "server": "npm --prefix server start",
+    "server:install": "npm --prefix server install",
+    "dev:all": "concurrently -n web,api -c blue,green \"npm run dev\" \"npm run server\"",
     "build": "vite build",
-    "build:all": "vite build",
+    "build:all": "npm run build && npm run server:install",
+    "start": "npm --prefix server start",
     "lint": "oxlint",
-    "preview": "vite preview",
-    "start": "vite preview --host --port $PORT"
+    "preview": "vite preview"
   },
   "dependencies": {
     "react": "^19.2.8",
@@ -20,6 +23,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
+    "concurrently": "^10.0.4",
     "oxlint": "^1.75.0",
     "vite": "^8.2.0"
   }
