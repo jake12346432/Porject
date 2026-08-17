@@ -5,6 +5,22 @@ backend for the "buy" feature: pricing a generated portfolio at current
 market prices, saving it, and combining everyone's buys for the day into one
 bulk order sheet for the next market open.
 
+The app has two tabs, switchable from the nav bar (Equity is the default):
+
+- **Equity** (`src/PortfolioBuilder.jsx`) — the stock screener described
+  below, with live pricing, the AI "describe what you want" box, and the buy/
+  order-book backend.
+- **Fixed Income** (`src/BondPortfolioBuilder.jsx` + `src/bondData.js`) — a
+  bond portfolio builder over 184 real, named government/corporate bonds
+  (sourced from the published holdings of AGG/LQD/EMB). It's fully
+  client-side — no backend, no live pricing, no buy flow — so it works with
+  just `npm run dev` and needs none of the API keys below. See its
+  in-app disclosure for exactly what's real data vs. calculated.
+
+Both tabs share the same light/dark theme toggle and visual language, but
+run independent portfolio-building state — switching tabs doesn't preserve
+whatever you'd built on the other one.
+
 ## Running it
 
 You need both the frontend and the backend running. Easiest way:

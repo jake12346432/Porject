@@ -780,10 +780,64 @@ function FilterCard({ heading, description, children, t = THEMES.dark, wide }) {
   );
 }
 
+// Caps a category -> weight% map at the top N entries (by weight) plus one "Other" bucket for the
+// remainder, so a 17-sector allocation doesn't turn into an unreadably tall bar chart.
+function allocToChartData(allocObj, topN = 8) {
+  const entries = Object.entries(allocObj).filter(([, v]) => v > 0.05).sort((a, b) => b[1] - a[1]);
+  if (entries.length <= topN) return entries.map(([name, value]) => ({ name, value }));
+  const head = entries.slice(0, topN);
+  const tailSum = entries.slice(topN).reduce((a, [, v]) => a + v, 0);
+  return [...head.map(([name, value]) => ({ name, value })), { name: "Other", value: tailSum }];
+}
+
+// Horizontal allocation bar chart with real axis labels, gridlines and a hover tooltip — replaces
+// the old hand-rolled div-bar rows. One color per chart (magnitude is a sequential quantity here,
+// encoded by bar length; a categorical rainbow per bar would misleadingly suggest each sector is
+// its own independent "identity" dimension rather than a share of the same 100%). The Tooltip's
+// `contentStyle` alone only styles Recharts' outer wrapper — its label/value spans have their own
+// hardcoded near-black default color that stays illegible on a dark surface unless `labelStyle`/
+// `itemStyle` are set explicitly too, which is what makes the tooltip text readable here.
+function AllocBarChart({ data, t = THEMES.dark, color }) {
+  if (!data.length) return <div style={{ fontSize: 12.5, color: t.faint, padding: "40px 0", textAlign: "center" }}>No data</div>;
+  return (
+    <ResponsiveContainer width="100%" height={Math.max(140, data.length * 30)}>
+      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 20, bottom: 4, left: 4 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke={t.gridLine} horizontal={false} />
+        <XAxis type="number" domain={[0, "dataMax"]} tick={{ fill: t.faint, fontSize: 11 }} tickFormatter={v => Math.round(v) + "%"} />
+        <YAxis type="category" dataKey="name" width={130} tick={{ fill: t.textSecondary, fontSize: 11.5 }} />
+        <Tooltip
+          contentStyle={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, fontSize: 12 }}
+          labelStyle={{ color: t.textStrong, fontWeight: 600 }} itemStyle={{ color: t.text }}
+          formatter={(v) => v.toFixed(1) + "%"}
+        />
+        <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+          {data.map((_, i) => <Cell key={i} fill={color} />)}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+// Segmented Equity / Fixed Income switcher, sitting where a static screen-name label used to be
+// in the nav — shared visual language with other pill toggles. Equity is first/leftmost, matching
+// the tab order in App.jsx (equity is the default/primary product, fixed income the newer add-on).
+function TabSwitcher({ activeTab, onSwitchTab, t = THEMES.dark }) {
+  return (
+    <div style={{ display: "flex", background: t.surface2, borderRadius: 8, padding: 3, border: `1px solid ${t.borderMuted}` }}>
+      {[["equity", "Equity"], ["fixedIncome", "Fixed Income"]].map(([key, label]) => (
+        <button key={key} onClick={() => onSwitchTab(key)} style={{
+          padding: "6px 14px", borderRadius: 6, border: "none",
+          background: activeTab === key ? t.accent : "transparent", color: activeTab === key ? "#FFFFFF" : t.muted,
+          fontSize: 12.5, fontWeight: activeTab === key ? 700 : 500, fontFamily: "'Inter', sans-serif", cursor: "pointer",
+          whiteSpace: "nowrap", transition: "all 0.15s",
+        }}>{label}</button>
+      ))}
+    </div>
+  );
+}
+
 /* ============================== MAIN ============================== */
-export default function PortfolioBuilder() {
-  // Light/dark theme
-  const [theme, setTheme] = useState("dark");
+export default function PortfolioBuilder({ theme, setTheme, activeTab, onSwitchTab }) {
   const t = THEMES[theme];
 
   // Hard filters
@@ -945,8 +999,8 @@ export default function PortfolioBuilder() {
   const sectorAlloc = portfolio ? portfolio.sectorAlloc : {};
   const regionAlloc = portfolio ? portfolio.regionAlloc : {};
   const universeSize = portfolio ? portfolio.universeSize : STOCKS.length;
-  const maxSectorW = Math.max(...Object.values(sectorAlloc), 1);
-  const maxRegionW = Math.max(...Object.values(regionAlloc), 1);
+  const sectorChart = allocToChartData(sectorAlloc, 8);
+  const regionChart = allocToChartData(regionAlloc, 7);
 
   // Historical performance from the uploaded spreadsheet, if there is one — a real month-by-month
   // series, not a two-point estimate. Only holdings present in EVERY row of the file are included,
@@ -1283,7 +1337,7 @@ ${list}`;
           <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 500, color: t.muted }}>Wealth</span>
         </div>
         <div style={{ width: 1, height: 22, background: t.gridLine, margin: "0 4px" }} />
-        <span style={{ fontSize: 13, fontWeight: 600, color: t.textSecondary }}>Portfolio Screen</span>
+        <TabSwitcher t={t} activeTab={activeTab} onSwitchTab={onSwitchTab} />
 
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 16 }}>
           <button
@@ -1800,46 +1854,22 @@ ${list}`;
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 20, marginBottom: 26 }}>
-              <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: 16 }}>
-                <div style={{ fontSize: 11.5, color: t.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Sector allocation</div>
-                {Object.entries(sectorAlloc).sort((a, b) => b[1] - a[1]).map(([sector, w]) => (
-                  <div key={sector} style={{ marginBottom: 8 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, marginBottom: 3 }}>
-                      <span style={{ color: t.textSecondary }}>{sector}</span>
-                      <span style={{ fontFamily: "'IBM Plex Mono', monospace", color: t.muted }}>{w.toFixed(1)}%</span>
-                    </div>
-                    <div style={{ height: 6, background: t.surfaceAlt, borderRadius: 4, overflow: "hidden" }}>
-                      <div style={{ width: `${(w / maxSectorW) * 100}%`, height: "100%", background: SECTOR_COLORS[sector] || fallbackColor, borderRadius: 4 }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <FilterCard t={t} heading="Sector allocation">
+                <AllocBarChart t={t} data={sectorChart} color={t.teal} />
+              </FilterCard>
 
-              <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: 16 }}>
-                <div style={{ fontSize: 11.5, color: t.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Geographic allocation</div>
-                {Object.entries(regionAlloc).sort((a, b) => b[1] - a[1]).map(([region, w]) => (
-                  <div key={region} style={{ marginBottom: 8 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, marginBottom: 3 }}>
-                      <span style={{ color: t.textSecondary }}>{region}</span>
-                      <span style={{ fontFamily: "'IBM Plex Mono', monospace", color: t.muted }}>{w.toFixed(1)}%</span>
-                    </div>
-                    <div style={{ height: 6, background: t.surfaceAlt, borderRadius: 4, overflow: "hidden" }}>
-                      <div style={{ width: `${(w / maxRegionW) * 100}%`, height: "100%", background: t.accent, borderRadius: 4 }} />
-                    </div>
-                  </div>
-                ))}
+              <FilterCard t={t} heading="Geographic allocation">
+                <AllocBarChart t={t} data={regionChart} color={t.accent} />
                 <div style={{ fontSize: 10.5, color: t.faint, marginTop: 14, lineHeight: 1.5 }}>
                   Factor legend: <span style={{ color: t.accent }}>■</span> Quality &nbsp;
                   <span style={{ color: t.positive }}>■</span> Value &nbsp;
                   <span style={{ color: t.teal }}>■</span> Growth &nbsp;
                   <span style={{ color: t.blueAccent }}>■</span> Momentum
                 </div>
-              </div>
+              </FilterCard>
             </div>
 
-            <div style={{ fontSize: 11.5, color: t.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
-              Your top {topTen.length} holdings {selected.length > topTen.length && <span style={{ textTransform: "none", letterSpacing: 0 }}>(of {selected.length} in your full portfolio)</span>}
-            </div>
+            <SectionLabel t={t} sub={selected.length > topTen.length ? `Top ${topTen.length} by weight — plus ${selected.length - topTen.length} more not shown.` : undefined}>Holdings</SectionLabel>
             <div style={{ border: `1px solid ${t.border}`, borderRadius: 10, overflow: "hidden" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
                 <thead>
