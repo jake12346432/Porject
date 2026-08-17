@@ -1,5 +1,27 @@
 import * as XLSX from "xlsx";
 
+// json_to_sheet leaves every column at Excel's default ~8.4-char width, so
+// tickers/ISINs/company names get clipped until someone manually double-clicks
+// each column border. Auto-sizing off the actual header + cell text fixes that
+// without needing a person to touch formatting every time the sheet is opened.
+function autoSizeColumns(rows) {
+  if (rows.length === 0) return [];
+  const keys = Object.keys(rows[0]);
+  return keys.map(key => {
+    const maxLen = rows.reduce((max, row) => {
+      const len = row[key] == null ? 0 : String(row[key]).length;
+      return Math.max(max, len);
+    }, key.length);
+    return { wch: Math.min(maxLen + 2, 40) };
+  });
+}
+
+function sheetFrom(rows) {
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws["!cols"] = autoSizeColumns(rows);
+  return ws;
+}
+
 /**
  * Turns a portfolio's target holdings + weights into a priced, sized buy list.
  * Only holdings with an available quote are included; weights are renormalized
@@ -113,9 +135,9 @@ function appendEquitySheets(wb, buyLists) {
       "# Portfolios": t.portfolios.size,
     }));
 
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(bulkRows), "Equity Bulk Order");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(allocations), "Equity Allocations");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(portfolioRows), "Equity Portfolios");
+  XLSX.utils.book_append_sheet(wb, sheetFrom(bulkRows), "Equity Bulk Order");
+  XLSX.utils.book_append_sheet(wb, sheetFrom(allocations), "Equity Allocations");
+  XLSX.utils.book_append_sheet(wb, sheetFrom(portfolioRows), "Equity Portfolios");
 }
 
 function appendBondSheets(wb, buyLists) {
@@ -169,9 +191,9 @@ function appendBondSheets(wb, buyLists) {
       "# Portfolios": b.portfolios.size,
     }));
 
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(bulkRows), "Bond Bulk Order");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(allocations), "Bond Allocations");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(portfolioRows), "Bond Portfolios");
+  XLSX.utils.book_append_sheet(wb, sheetFrom(bulkRows), "Bond Bulk Order");
+  XLSX.utils.book_append_sheet(wb, sheetFrom(allocations), "Bond Allocations");
+  XLSX.utils.book_append_sheet(wb, sheetFrom(portfolioRows), "Bond Portfolios");
 }
 
 const round2 = (n) => Math.round(n * 100) / 100;
