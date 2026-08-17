@@ -1,8 +1,15 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import {
-  BONDS, REGIONS, SECTORS, GOV_CORP_TYPES, YTM_MIN, YTM_MAX, DURATION_MIN, DURATION_MAX,
-} from "./bondData.js";
+import { BONDS, REGIONS, SECTORS, YTM_MIN, YTM_MAX, DURATION_MIN, DURATION_MAX } from "./bondData.js";
+
+// REGIONS/SECTORS from bondData.js span the full dataset, including government-only categories
+// (e.g. "Emerging Markets" has no Corporate bonds at all; "Sovereign"/"Treasury"/"Agency"/"MBS
+// Pass-Through" are gov-only sectors). Now that Corporate is the only eligible govCorp value
+// (see passesFilters), offering those as filter chips would be a dead end — selecting them could
+// never match anything. These derive the chip lists from what Corporate bonds actually have.
+const CORPORATE_BONDS = BONDS.filter(b => b.govCorp === "Corporate");
+const CORPORATE_REGIONS = [...new Set(CORPORATE_BONDS.map(b => b.region))].sort();
+const CORPORATE_SECTORS = [...new Set(CORPORATE_BONDS.map(b => b.sector))].sort();
 
 /* ============================== THEME (same palette as the equity Portfolio Builder) ============================== */
 const THEMES = {
@@ -32,118 +39,61 @@ const THEMES = {
   },
 };
 
-/* ============================== TEMPLATES ============================== */
+// Best-effort guesses — Investopedia blocks this environment's crawler so these couldn't be
+// verified by fetching the pages directly. Click through once deployed and flag any wrong ones.
+const INVESTOPEDIA_LINKS = {
+  "Yield to maturity": "https://www.investopedia.com/terms/y/yieldtomaturity.asp",
+  "Duration": "https://www.investopedia.com/terms/d/duration.asp",
+};
+function ConceptLink({ term, children, t }) {
+  const href = INVESTOPEDIA_LINKS[term];
+  if (!href) return children;
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: "inherit", textDecoration: "underline", textDecorationColor: t.borderStrong, textUnderlineOffset: 3 }}>
+      {children}
+    </a>
+  );
+}
+
+/* ============================== TEMPLATES — corporate-only, GBP-only, purely hard filters ============================== */
 const TEMPLATES = [
   {
-    name: "US Treasury Ladder",
-    blurb: "Real U.S. Treasury notes spread across maturities — built for capital preservation with modest, dependable income.",
-    config: {
-      regions: ["North America"], sectors: ["Treasury"], govCorp: "Government",
-      ytmMin: YTM_MIN, ytmMax: YTM_MAX,
-      durationMin: DURATION_MIN, durationMax: DURATION_MAX,
-      objective: { Y: 20, S: 80 },
-    },
-  },
-  {
     name: "Short-Duration Corporate Income",
-    blurb: "Real corporate bonds under 4 years duration — income with low sensitivity to rate moves.",
-    config: {
-      regions: [], sectors: [], govCorp: "Corporate",
-      ytmMin: YTM_MIN, ytmMax: YTM_MAX,
-      durationMin: 0, durationMax: 4,
-      objective: { Y: 70, S: 30 },
-    },
+    blurb: "Corporate bonds under 4 years duration — income with lower sensitivity to rate moves.",
+    config: { regions: [], sectors: [], ytmMin: YTM_MIN, ytmMax: YTM_MAX, durationMin: DURATION_MIN, durationMax: 4 },
   },
   {
-    name: "Emerging Markets Sovereign Income",
-    blurb: "Real EM government bonds (sourced from EMB's published holdings) for higher income — accepts more country risk.",
-    config: {
-      regions: ["Emerging Markets"], sectors: [], govCorp: "Government",
-      ytmMin: YTM_MIN, ytmMax: YTM_MAX,
-      durationMin: DURATION_MIN, durationMax: DURATION_MAX,
-      objective: { Y: 65, S: 35 },
-    },
+    name: "UK & European Corporate",
+    blurb: "Corporate bonds from UK and European issuers, across the full yield and duration range.",
+    config: { regions: ["UK", "Europe"], sectors: [], ytmMin: YTM_MIN, ytmMax: YTM_MAX, durationMin: DURATION_MIN, durationMax: DURATION_MAX },
   },
   {
-    name: "Diversified Core Aggregate",
-    blurb: "A broad, balanced blend of real government and corporate bonds across every region and sector in the universe.",
-    config: {
-      regions: [], sectors: [], govCorp: "All",
-      ytmMin: YTM_MIN, ytmMax: YTM_MAX,
-      durationMin: DURATION_MIN, durationMax: DURATION_MAX,
-      objective: { Y: 50, S: 50 },
-    },
+    name: "Technology & Communications",
+    blurb: "Corporate bonds from technology and communications issuers only.",
+    config: { regions: [], sectors: ["Technology", "Communications"], ytmMin: YTM_MIN, ytmMax: YTM_MAX, durationMin: DURATION_MIN, durationMax: DURATION_MAX },
+  },
+  {
+    name: "Diversified Corporate Core",
+    blurb: "A broad, balanced blend of corporate bonds across every region and sector in the universe.",
+    config: { regions: [], sectors: [], ytmMin: YTM_MIN, ytmMax: YTM_MAX, durationMin: DURATION_MIN, durationMax: DURATION_MAX },
   },
 ];
 
 /* ============================== HELPERS ============================== */
-function clamp01(x) { return Math.max(0, Math.min(1, x)); }
-
-// Generic "sum to 100" redistribution — spreads the required change evenly across the other
-// sliders, water-filling so a slider pushed to 0 isn't locked out of regaining share later.
-function redistribute(current, key, rawVal, decimals = 0) {
-  const mult = Math.pow(10, decimals);
-  const newVal = Math.max(0, Math.min(100, rawVal));
-  const keys = Object.keys(current);
-  const others = keys.filter(k => k !== key);
-  const remaining = 100 - newVal;
-
-  let values = {};
-  others.forEach(k => { values[k] = current[k]; });
-  let need = remaining - others.reduce((a, k) => a + values[k], 0);
-  let free = [...others];
-  let guard = 0;
-  while (Math.abs(need) > 1e-9 && free.length > 0 && guard < 20) {
-    const share = need / free.length;
-    const nextFree = [];
-    let allocated = 0;
-    for (const k of free) {
-      const v = values[k] + share;
-      if (v < 0) { allocated += (0 - values[k]); values[k] = 0; }
-      else if (v > 100) { allocated += (100 - values[k]); values[k] = 100; }
-      else { values[k] = v; allocated += share; nextFree.push(k); }
-    }
-    need -= allocated;
-    free = nextFree;
-    guard++;
-  }
-
-  const next = { [key]: Math.round(newVal * mult) / mult };
-  others.forEach(k => { next[k] = Math.round(values[k] * mult) / mult; });
-
-  const drift = Math.round((100 - (next[key] + others.reduce((a, k) => a + next[k], 0))) * mult) / mult;
-  if (drift !== 0) {
-    const target = others.reduce((best, k) => (next[k] > next[best] ? k : best), others[0]);
-    next[target] = Math.max(0, Math.min(100, Math.round((next[target] + drift) * mult) / mult));
-  }
-  return next;
-}
-
-// Every selected bond gets >= floorPct weight; the remainder is distributed by composite score.
-function applyMinWeight(items, floorPct = 1) {
-  const n = items.length;
-  if (n === 0) return items;
-  if (n * floorPct >= 100) {
-    const eq = 100 / n;
-    return items.map(it => ({ ...it, weight: eq }));
-  }
-  const rawSum = items.reduce((a, it) => a + Math.max(0.0001, it.composite), 0) || 1;
-  const remaining = 100 - n * floorPct;
-  return items.map(it => ({ ...it, weight: floorPct + (Math.max(0.0001, it.composite) / rawSum) * remaining }));
-}
-
-// The hard-filter predicate, shared by the engine and the live "N bonds eligible" preview so
-// they always agree on what would pass.
+// The hard-filter predicate, shared by the engine and the live "N bonds eligible" preview so they
+// always agree on what would pass. Corporate-only and GBP-only are permanent, non-adjustable
+// policy — not user-facing toggles — so they're baked in here rather than read off filter state.
 function passesFilters(b, p) {
+  if (b.govCorp !== "Corporate") return false;
+  if (b.currency !== "GBP") return false;
   if (!p.regionFilter.has(b.region)) return false;
   if (!p.sectorFilter.has(b.sector)) return false;
-  if (p.govCorpFilter !== "All" && b.govCorp !== p.govCorpFilter) return false;
   if (b.ytm < p.ytmMin || b.ytm > p.ytmMax) return false;
   if (b.duration < p.durationMin || b.duration > p.durationMax) return false;
   return true;
 }
 
-const MIN_HOLDINGS = 10, MAX_HOLDINGS = 30;
+const MAX_HOLDINGS = 30;
 
 const DURATION_BUCKETS = [
   { label: "0-2y", test: d => d < 2 },
@@ -161,95 +111,36 @@ const MATURITY_BUCKETS = [
 ];
 
 function describeBondPortfolio(p, stats) {
-  const driverLabels = { Y: "Income", S: "Stability" };
-  const driverDescs = {
-    Y: "prioritizes the highest yields available in your filtered universe",
-    S: "favors shorter-duration issues to limit interest-rate sensitivity",
-  };
-  const balanced = Math.abs(p.objective.Y - p.objective.S) < 15;
-  const top = p.objective.Y >= p.objective.S ? "Y" : "S";
-
   const singleRegion = p.regionFilter.size === 1 ? [...p.regionFilter][0] : null;
+  const singleSector = p.sectorFilter.size === 1 ? [...p.sectorFilter][0] : null;
   const nameBits = [];
   if (singleRegion) nameBits.push(singleRegion);
-  if (p.govCorpFilter !== "All") nameBits.push(p.govCorpFilter);
-  nameBits.push(balanced ? "Balanced" : driverLabels[top]);
-  nameBits.push("Bond Portfolio");
+  if (singleSector) nameBits.push(singleSector);
+  nameBits.push("Corporate Bond Portfolio");
   const name = nameBits.join(" ");
 
-  const styleSentence = balanced
-    ? "It weighs income and duration stability roughly equally."
-    : `It's built around a strategy that ${driverDescs[top]}.`;
-
-  const blurb = `A ${stats.count}-bond portfolio of real, named securities yielding ${stats.wYtm.toFixed(2)}% with ${stats.wDuration.toFixed(1)}-year average duration. ${styleSentence}`;
+  const blurb = `A ${stats.count}-bond, equally-weighted portfolio of GBP corporate bonds yielding ${stats.wYtm.toFixed(2)}% with ${stats.wDuration.toFixed(1)}-year average duration. Every bond that clears your region, sector, YTM and duration filters is included — no preference weighting is applied.`;
   return { name, blurb };
 }
 
+// Purely hard-filter driven: every bond clearing region/sector/YTM/duration (and the permanent
+// Corporate + GBP lock in passesFilters) is included, equally weighted — there's no scoring or
+// preference dial pulling the selection or the weighting toward anything. If more bonds qualify
+// than MAX_HOLDINGS, the highest-YTM names are kept — a transparent, factual tiebreaker, not a
+// preference setting.
 function computePortfolio(p) {
   const universe = BONDS.filter(b => passesFilters(b, p));
   if (universe.length === 0) {
     return { universeSize: 0, selected: [], stats: null, regionAlloc: {}, sectorAlloc: {}, durationAlloc: {}, maturityAlloc: {}, meta: null };
   }
 
-  const ytmVals = universe.map(b => b.ytm);
-  const durVals = universe.map(b => b.duration);
-  const minYtm = Math.min(...ytmVals), maxYtm = Math.max(...ytmVals);
-  const minDur = Math.min(...durVals), maxDur = Math.max(...durVals);
-  const norm = (v, l, h) => (h > l ? clamp01((v - l) / (h - l)) * 100 : 50);
+  let selected = universe.length > MAX_HOLDINGS
+    ? [...universe].sort((a, b) => b.ytm - a.ytm).slice(0, MAX_HOLDINGS)
+    : universe;
 
-  const wY = p.objective.Y / 100, wS = p.objective.S / 100;
-
-  const scored = universe.map(b => {
-    const yieldScore = norm(b.ytm, minYtm, maxYtm);
-    const stabilityScore = 100 - norm(b.duration, minDur, maxDur);
-    const composite = wY * yieldScore + wS * stabilityScore;
-    return { ...b, composite };
-  });
-
-  // Selection is stratified by sector rather than a single global top-composite cut. Real YTM is
-  // structurally correlated with sector/region (EM sovereigns simply yield more than IG corporates
-  // or Treasuries), so ranking the whole filtered universe by composite score alone would let one
-  // high-yielding sector crowd out everything else — a 50/50 income/stability objective on the full
-  // universe picked 100% Emerging Markets sovereigns and nothing else in testing. Instead, each
-  // sector present in the filtered universe gets a slot count proportional to its own share of that
-  // universe (min 1), filled with its own best-composite bonds — so a broad filter set actually
-  // produces a broad portfolio, while a narrow one (e.g. sector filtered down to just "Treasury")
-  // still works exactly like a single-sector ranking.
-  let selected;
-  if (scored.length <= MIN_HOLDINGS) {
-    selected = scored;
-  } else {
-    const bySector = new Map();
-    scored.forEach(b => {
-      if (!bySector.has(b.sector)) bySector.set(b.sector, []);
-      bySector.get(b.sector).push(b);
-    });
-    bySector.forEach(list => list.sort((a, b) => b.composite - a.composite));
-
-    const picked = [];
-    const pickedIds = new Set();
-    bySector.forEach(list => {
-      const target = Math.max(1, Math.round(MAX_HOLDINGS * (list.length / scored.length)));
-      list.slice(0, target).forEach(b => {
-        if (!pickedIds.has(b.id)) { picked.push(b); pickedIds.add(b.id); }
-      });
-    });
-
-    const byComposite = [...scored].sort((a, b) => b.composite - a.composite);
-    if (picked.length < MIN_HOLDINGS) {
-      for (const b of byComposite) {
-        if (picked.length >= MIN_HOLDINGS) break;
-        if (!pickedIds.has(b.id)) { picked.push(b); pickedIds.add(b.id); }
-      }
-    }
-
-    selected = picked.length > MAX_HOLDINGS
-      ? [...picked].sort((a, b) => b.composite - a.composite).slice(0, MAX_HOLDINGS)
-      : picked;
-  }
-
-  selected = applyMinWeight(selected, 1);
-  selected.sort((a, b) => b.weight - a.weight);
+  const eqWeight = 100 / selected.length;
+  selected = selected.map(b => ({ ...b, weight: eqWeight }));
+  selected.sort((a, b) => b.ytm - a.ytm);
 
   const wSum = selected.reduce((a, b) => a + b.weight, 0) || 1;
   const wAvg = (key) => selected.reduce((a, b) => a + b[key] * b.weight, 0) / wSum;
@@ -264,17 +155,11 @@ function computePortfolio(p) {
     ? selected.reduce((a, b) => a + yearsToMaturity(b) * b.weight, 0) / wSum
     : null;
 
-  const uniqueIssuers = new Set(selected.map(b => b.issuer)).size;
-  const govSharePct = selected.filter(b => b.govCorp === "Government").reduce((a, b) => a + b.weight, 0);
-  const corpSharePct = selected.filter(b => b.govCorp === "Corporate").reduce((a, b) => a + b.weight, 0);
-  const govRelatedSharePct = Math.max(0, 100 - govSharePct - corpSharePct);
-
   const stats = {
     count: selected.length,
     wYtm: wAvg("ytm"),
     wDuration: wAvg("duration"),
-    wCoupon, wYearsToMaturity, uniqueIssuers,
-    govSharePct, corpSharePct, govRelatedSharePct,
+    wCoupon, wYearsToMaturity,
   };
 
   const regionAlloc = {}, sectorAlloc = {};
@@ -429,21 +314,6 @@ function Chip({ active, onClick, children, t }) {
   );
 }
 
-function Toggle3({ value, options, onChange, t }) {
-  return (
-    <div style={{ display: "flex", background: t.surface2, borderRadius: 8, padding: 3, border: `1px solid ${t.borderMuted}` }}>
-      {options.map(opt => (
-        <button key={opt} onClick={() => onChange(opt)} style={{
-          flex: 1, padding: "6px 8px", borderRadius: 6, border: "none",
-          background: value === opt ? t.accent : "transparent", color: value === opt ? t.onAccent : t.muted,
-          fontSize: 12, fontWeight: value === opt ? 600 : 400, fontFamily: "'Inter', sans-serif", cursor: "pointer",
-          transition: "all 0.15s",
-        }}>{opt}</button>
-      ))}
-    </div>
-  );
-}
-
 function Slider({ value, min, max, step = 1, onChange, unit = "", decimals = 0, t }) {
   const [text, setText] = useState(String(value));
   useEffect(() => { setText(String(value)); }, [value]);
@@ -530,8 +400,8 @@ function AllocBarChart({ data, t, color }) {
 }
 
 // Segmented Equity / Fixed Income switcher, sitting where a static screen-name label used to be
-// in the nav — shared visual language with Toggle3 above. Equity is first/leftmost, matching the
-// tab order in App.jsx (equity is the default/primary product, fixed income is the newer add-on).
+// in the nav — shared visual language with other pill toggles. Equity is first/leftmost, matching
+// the tab order in App.jsx (equity is the default/primary product, fixed income the newer add-on).
 function TabSwitcher({ activeTab, onSwitchTab, t }) {
   return (
     <div style={{ display: "flex", background: t.surface2, borderRadius: 8, padding: 3, border: `1px solid ${t.borderMuted}` }}>
@@ -551,14 +421,12 @@ function TabSwitcher({ activeTab, onSwitchTab, t }) {
 export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwitchTab }) {
   const t = THEMES[theme];
 
-  const [regionFilter, setRegionFilter] = useState(new Set(REGIONS));
-  const [sectorFilter, setSectorFilter] = useState(new Set(SECTORS));
-  const [govCorpFilter, setGovCorpFilter] = useState("All");
+  const [regionFilter, setRegionFilter] = useState(new Set(CORPORATE_REGIONS));
+  const [sectorFilter, setSectorFilter] = useState(new Set(CORPORATE_SECTORS));
   const [ytmMin, setYtmMin] = useState(YTM_MIN);
   const [ytmMax, setYtmMax] = useState(YTM_MAX);
   const [durationMin, setDurationMin] = useState(DURATION_MIN);
   const [durationMax, setDurationMax] = useState(DURATION_MAX);
-  const [objective, setObjective] = useState({ Y: 50, S: 50 });
 
   const [activeTemplate, setActiveTemplate] = useState(null);
   const [portfolio, setPortfolio] = useState(null);
@@ -569,8 +437,8 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
   const markDirty = () => setActiveTemplate(null);
 
   const filterParams = useMemo(() => ({
-    regionFilter, sectorFilter, govCorpFilter, ytmMin, ytmMax, durationMin, durationMax, objective,
-  }), [regionFilter, sectorFilter, govCorpFilter, ytmMin, ytmMax, durationMin, durationMax, objective]);
+    regionFilter, sectorFilter, ytmMin, ytmMax, durationMin, durationMax,
+  }), [regionFilter, sectorFilter, ytmMin, ytmMax, durationMin, durationMax]);
 
   const liveEligible = useMemo(() => BONDS.filter(b => passesFilters(b, filterParams)).length, [filterParams]);
 
@@ -582,26 +450,22 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
   function applyTemplate(tpl) {
     const c = tpl.config;
     setActiveTemplate(tpl.name);
-    setRegionFilter(c.regions.length ? new Set(c.regions) : new Set(REGIONS));
-    setSectorFilter(c.sectors.length ? new Set(c.sectors) : new Set(SECTORS));
-    setGovCorpFilter(c.govCorp);
+    setRegionFilter(c.regions.length ? new Set(c.regions) : new Set(CORPORATE_REGIONS));
+    setSectorFilter(c.sectors.length ? new Set(c.sectors) : new Set(CORPORATE_SECTORS));
     setYtmMin(c.ytmMin);
     setYtmMax(c.ytmMax);
     setDurationMin(c.durationMin);
     setDurationMax(c.durationMax);
-    setObjective(c.objective);
   }
 
   function resetAll() {
     setActiveTemplate(null);
-    setRegionFilter(new Set(REGIONS));
-    setSectorFilter(new Set(SECTORS));
-    setGovCorpFilter("All");
+    setRegionFilter(new Set(CORPORATE_REGIONS));
+    setSectorFilter(new Set(CORPORATE_SECTORS));
     setYtmMin(YTM_MIN);
     setYtmMax(YTM_MAX);
     setDurationMin(DURATION_MIN);
     setDurationMax(DURATION_MAX);
-    setObjective({ Y: 50, S: 50 });
   }
 
   function toggleRegion(r) {
@@ -661,7 +525,7 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
 
       {/* ============ UTILITY STRIP ============ */}
       <div style={{ background: "#1C1720", color: "#B8AECC", fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", textAlign: "center", padding: "6px 12px" }}>
-        Demo · Real Bond Data, 17 Aug 2026 Snapshot — nothing here is a real trade or investment advice
+        Demo · Placeholder Bond Data — an official GBP corporate bond list will replace this shortly
       </div>
 
       {/* ============ TOP NAV ============ */}
@@ -757,15 +621,7 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
               padding: theme === "dark" ? 0 : "4px 14px", borderRadius: 12,
               background: theme === "dark" ? "transparent" : "rgba(255,255,255,0.82)",
             }}>
-              Set your filters and we'll screen {BONDS.length} real government and corporate bonds — sourced from the published holdings of major bond ETFs (AGG, LQD, EMB) — to build you a diversified portfolio, then show you the holdings.
-            </div>
-            <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: "8px 18px", marginTop: 22 }}>
-              {[["Income", t.accent], ["Stability", t.teal]].map(([label, color]) => (
-                <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: t.textSecondary, background: theme === "dark" ? "transparent" : "rgba(255,255,255,0.82)", borderRadius: 99, padding: theme === "dark" ? 0 : "3px 9px" }}>
-                  <span style={{ width: 9, height: 9, borderRadius: "50%", background: color, flexShrink: 0 }} />
-                  {label}
-                </div>
-              ))}
+              Set your filters and we'll screen GBP-denominated corporate bonds only — every bond that clears your filters is included, equally weighted. No government or government-related issuers, and no preference weighting.
             </div>
             <div style={{ marginTop: 18, color: t.orange, fontSize: 18 }} aria-hidden="true">↓</div>
           </div>
@@ -794,40 +650,33 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
         </div>
 
         <div style={{ fontSize: 12, color: t.faint, textAlign: "center", marginBottom: 20, maxWidth: 700, marginLeft: "auto", marginRight: "auto", lineHeight: 1.5 }}>
-          No credit-rating filter here — this universe is real, named securities and the source data has no rating column, so nothing here shows a rating that isn't independently verified.
+          Corporate issuers only, priced in GBP, and no credit-rating filter — the source data has
+          no rating column, so nothing here shows a rating that isn't independently verified.
         </div>
 
         {/* ============ FILTERS ============ */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginBottom: 10 }}>
           <FilterCard t={t} heading="Region" description="Which parts of the world can appear in your portfolio.">
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-              <ResetButton t={t} onClick={() => { markDirty(); setRegionFilter(new Set(REGIONS)); }}>Select all</ResetButton>
+              <ResetButton t={t} onClick={() => { markDirty(); setRegionFilter(new Set(CORPORATE_REGIONS)); }}>Select all</ResetButton>
             </div>
-            <div>{REGIONS.map(r => (
+            <div>{CORPORATE_REGIONS.map(r => (
               <Chip key={r} t={t} active={regionFilter.has(r)} onClick={() => toggleRegion(r)}>{r}</Chip>
             ))}</div>
           </FilterCard>
 
-          <FilterCard t={t} heading="Bond type" wide description="Restrict to government-issued bonds, corporate bonds, government-related (agency/MBS) issuers, or allow all.">
-            <Toggle3 t={t} value={govCorpFilter} options={["All", ...GOV_CORP_TYPES]}
-              onChange={v => { markDirty(); setGovCorpFilter(v); }} />
-            <div style={{ fontSize: 11.5, color: t.faint, marginTop: 10 }}>
-              "Government-Related" covers agency and mortgage-backed (MBS) issuers — government-sponsored but not a direct sovereign obligation.
-            </div>
-          </FilterCard>
-
-          <FilterCard t={t} heading="Sector" wide description="Which bond categories — sovereign, IG corporate, high yield corporate, etc. — can appear.">
+          <FilterCard t={t} heading="Sector" description="Which corporate bond categories — banking, technology, energy, etc. — can appear.">
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-              <ResetButton t={t} onClick={() => { markDirty(); setSectorFilter(new Set(SECTORS)); }}>Select all</ResetButton>
+              <ResetButton t={t} onClick={() => { markDirty(); setSectorFilter(new Set(CORPORATE_SECTORS)); }}>Select all</ResetButton>
             </div>
             <div style={{ maxHeight: 130, overflowY: "auto", paddingRight: 4 }}>
-              {SECTORS.map(s => (
+              {CORPORATE_SECTORS.map(s => (
                 <Chip key={s} t={t} active={sectorFilter.has(s)} onClick={() => toggleSector(s)}>{s}</Chip>
               ))}
             </div>
           </FilterCard>
 
-          <FilterCard t={t} heading="Yield to maturity (YTM)" wide
+          <FilterCard t={t} heading={<ConceptLink t={t} term="Yield to maturity">Yield to maturity (YTM)</ConceptLink>} wide
             description="The annualized return you'd earn holding a bond to maturity at its current price — the main measure of a bond's income.">
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
               <div>
@@ -843,7 +692,7 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
             </div>
           </FilterCard>
 
-          <FilterCard t={t} heading="Duration" wide
+          <FilterCard t={t} heading={<ConceptLink t={t} term="Duration">Duration</ConceptLink>} wide
             description="How sensitive a bond's price is to interest-rate changes, in years — roughly, how much its price would move for a 1-point rate change. Shorter duration means less price swing.">
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
               <div>
@@ -858,27 +707,11 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
               </div>
             </div>
           </FilterCard>
-
-          <FilterCard t={t} heading="Objective" wide
-            description="Among the bonds that pass your filters above, how much to prioritize yield versus short-duration stability when picking and weighting holdings. Sliders sum to 100.">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 24, maxWidth: 480 }}>
-              {[["Y", "Income", t.accent], ["S", "Stability", t.teal]].map(([k, label, color]) => (
-                <div key={k}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                    <span style={{ width: 9, height: 9, borderRadius: "50%", background: color, flexShrink: 0 }} />
-                    <span style={{ fontSize: 12.5, color: t.textSecondary }}>{label}</span>
-                  </div>
-                  <Slider t={t} value={objective[k]} min={0} max={100} step={1} unit="%"
-                    onChange={v => { markDirty(); setObjective(redistribute(objective, k, v, 0)); }} />
-                </div>
-              ))}
-            </div>
-          </FilterCard>
         </div>
 
         <div style={{ textAlign: "center", marginBottom: 8 }}>
           <div style={{ fontSize: 11.5, color: t.faint }}>
-            {liveEligible} of {BONDS.length} bonds currently eligible
+            {liveEligible} GBP corporate bonds currently eligible
           </div>
         </div>
 
@@ -901,7 +734,7 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
 
         {portfolio && !stats && (
           <div style={{ textAlign: "center", color: t.negative, padding: "50px 20px", border: `1px solid ${t.negative}`, borderRadius: 12 }}>
-            No bonds match this combination of filters — widen your region, sector, YTM or duration range and try again.
+            No GBP corporate bonds match this combination of filters — widen your region, sector, YTM or duration range and try again. If this happens on every combination, the loaded bond data may not yet include any GBP-denominated corporate bonds.
           </div>
         )}
 
@@ -922,12 +755,10 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
             {/* ============ STATS ============ */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14, marginBottom: 30 }}>
               <StatTile t={t} label="Bonds held" value={stats.count} />
-              <StatTile t={t} label="Weighted YTM" value={stats.wYtm.toFixed(2) + "%"} />
-              <StatTile t={t} label="Weighted duration" value={stats.wDuration.toFixed(1) + " y"} />
-              <StatTile t={t} label="Weighted coupon" value={stats.wCoupon != null ? stats.wCoupon.toFixed(2) + "%" : "—"} />
+              <StatTile t={t} label="Avg. YTM" value={stats.wYtm.toFixed(2) + "%"} />
+              <StatTile t={t} label="Avg. duration" value={stats.wDuration.toFixed(1) + " y"} />
+              <StatTile t={t} label="Avg. coupon" value={stats.wCoupon != null ? stats.wCoupon.toFixed(2) + "%" : "—"} />
               <StatTile t={t} label="Avg. time to maturity" value={stats.wYearsToMaturity != null ? stats.wYearsToMaturity.toFixed(1) + " y" : "—"} />
-              <StatTile t={t} label="Unique issuers" value={stats.uniqueIssuers} />
-              <StatTile t={t} label="Gov / Corp / Gov-Related" value={`${stats.govSharePct.toFixed(0)}% / ${stats.corpSharePct.toFixed(0)}% / ${stats.govRelatedSharePct.toFixed(0)}%`} />
             </div>
 
             {/* ============ CHARTS ============ */}
@@ -947,12 +778,12 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
             </div>
 
             {/* ============ HOLDINGS TABLE ============ */}
-            <SectionLabel t={t} sub={`Top ${Math.min(15, portfolio.selected.length)} by weight${portfolio.selected.length > 15 ? ` — plus ${portfolio.selected.length - 15} more not shown` : ""}.`}>Holdings</SectionLabel>
+            <SectionLabel t={t} sub={`Top ${Math.min(15, portfolio.selected.length)} by yield${portfolio.selected.length > 15 ? ` — plus ${portfolio.selected.length - 15} more not shown` : ""}. All holdings are equally weighted.`}>Holdings</SectionLabel>
             <div style={{ overflowX: "auto", border: `1px solid ${t.border}`, borderRadius: 14 }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 900 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 860 }}>
                 <thead>
                   <tr style={{ background: t.surface2 }}>
-                    {["Instrument", "Type", "Region", "Sector", "Coupon", "Maturity", "YTM", "Duration", "Weight", "ISIN"].map(h => (
+                    {["Instrument", "Region", "Sector", "Coupon", "Maturity", "YTM", "Duration", "Weight", "ISIN"].map(h => (
                       <th key={h} style={{ textAlign: h === "Instrument" ? "left" : "right", padding: "10px 12px", color: t.muted, fontWeight: 600, whiteSpace: "nowrap", borderBottom: `1px solid ${t.border}` }}>{h}</th>
                     ))}
                   </tr>
@@ -961,7 +792,6 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
                   {portfolio.selected.slice(0, 15).map(b => (
                     <tr key={b.id} style={{ borderBottom: `1px solid ${t.borderMuted}` }}>
                       <td style={{ padding: "9px 12px", color: t.textStrong, fontWeight: 500, maxWidth: 280 }}>{b.name}</td>
-                      <td style={{ padding: "9px 12px", textAlign: "right", color: t.muted, whiteSpace: "nowrap" }}>{b.govCorp}</td>
                       <td style={{ padding: "9px 12px", textAlign: "right", color: t.muted, whiteSpace: "nowrap" }}>{b.region}</td>
                       <td style={{ padding: "9px 12px", textAlign: "right", color: t.muted, whiteSpace: "nowrap" }}>{b.sector}</td>
                       <td style={{ padding: "9px 12px", textAlign: "right", color: t.textSecondary, fontFamily: "'IBM Plex Mono', monospace", whiteSpace: "nowrap" }}>{b.coupon != null ? b.coupon.toFixed(2) + "%" : "—"}</td>
@@ -977,10 +807,11 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
             </div>
 
             <div style={{ textAlign: "center", marginTop: 40, fontSize: 11.5, color: t.faint, lineHeight: 1.6, maxWidth: 720, marginLeft: "auto", marginRight: "auto" }}>
-              Built from 184 real individual bonds sourced from the published holdings of AGG, LQD and EMB (fetched from ishares.com on 17 Aug 2026) —
-              issuer, coupon, maturity, CUSIP/ISIN and (where published) price/YTM are real, as-published data, not synthetic. Duration is not in the
-              source file and is calculated here from each bond's real coupon, maturity and YTM using standard bond math. Treat all prices, YTMs and
-              durations as a stale snapshot for prototyping, not tradeable quotes — this is not investment advice, and no rating data is available or shown.
+              This is placeholder bond data pending an official GBP corporate bond list. Duration is
+              calculated from each bond's coupon, maturity and YTM using standard bond math, not
+              published directly. Treat all prices, YTMs and durations as a stale snapshot for
+              prototyping, not tradeable quotes — this is not investment advice, and no rating data
+              is available or shown.
             </div>
           </div>
         )}

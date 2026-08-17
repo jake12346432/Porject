@@ -911,16 +911,7 @@ export default function PortfolioBuilder({ theme, setTheme, activeTab, onSwitchT
     if (!buyNameTouched && portfolio?.meta?.name) setBuyName(portfolio.meta.name);
   }, [portfolio, buyNameTouched]);
 
-  // Scroll to results after generating from the AI box or a template — those live at the top of
-  // the page, far above where the results render, so without this the person wouldn't see anything happen.
   const resultsRef = useRef(null);
-  const [pendingScroll, setPendingScroll] = useState(false);
-  useEffect(() => {
-    if (portfolio && pendingScroll) {
-      resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      setPendingScroll(false);
-    }
-  }, [portfolio, pendingScroll]);
 
 
   const toggleSet = (setFn, set, val) => {
@@ -936,12 +927,12 @@ export default function PortfolioBuilder({ theme, setTheme, activeTab, onSwitchT
     divEnabled, divMin, esgEnabled, esgMin,
   });
 
-  const generate = (paramsOverride) => {
+  const generate = (paramsOverride, { collapse = true } = {}) => {
     const res = computePortfolio(paramsOverride || buildParams());
     setPortfolio(res);
     setHasGenerated(true);
     setIsStale(false);
-    setFiltersCollapsed(true);
+    if (collapse) setFiltersCollapsed(true);
   };
 
   // Any change after a generation marks the result as stale — it does NOT auto-recompute.
@@ -969,6 +960,9 @@ export default function PortfolioBuilder({ theme, setTheme, activeTab, onSwitchT
     setDivEnabled(newDivEnabled); setDivMin(newDivMin);
     setEsgEnabled(newEsgEnabled); setEsgMin(newEsgMin);
 
+    // Stay expanded and switch into "Build your own" so the filters the AI/template just set are
+    // visible and immediately editable, instead of collapsing straight to a summary bar — the user
+    // should see exactly what got applied and be able to adjust it before treating it as final.
     generate({
       regionFilter: newRegionFilter, sectorFilter: newSectorFilter,
       qvgm: newQvgm,
@@ -976,7 +970,8 @@ export default function PortfolioBuilder({ theme, setTheme, activeTab, onSwitchT
       locPrefEnabled: newLocPrefEnabled, locWeights: newLocWeights,
       divEnabled: newDivEnabled, divMin: newDivMin,
       esgEnabled: newEsgEnabled, esgMin: newEsgMin,
-    });
+    }, { collapse: false });
+    setBuildMode("custom");
   };
 
   const runAI = async () => {
@@ -984,7 +979,6 @@ export default function PortfolioBuilder({ theme, setTheme, activeTab, onSwitchT
     setAiLoading(true); setAiError(null);
     try {
       const cfg = await getAIPortfolioConfig({ prompt: aiPrompt, sectors: SECTORS, regions: REGIONS });
-      setPendingScroll(true);
       applyAIConfig(cfg);
     } catch (err) {
       setAiError(err.message || "Couldn't turn that into a portfolio config — try rephrasing, or adjust the filters manually below.");
@@ -1546,7 +1540,7 @@ ${list}`;
                 <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg, transparent, ${t.accent}, transparent)` }} />
                 <div style={{ fontSize: 14.5, color: t.text, fontWeight: 600, marginBottom: 6 }}>{ex.name}</div>
                 <div style={{ fontSize: 12.5, color: t.muted, lineHeight: 1.5, marginBottom: 12 }}>{ex.blurb}</div>
-                <button onClick={() => { setPendingScroll(true); applyAIConfig(ex.config); }} style={{
+                <button onClick={() => applyAIConfig(ex.config)} style={{
                   fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", padding: "6px 14px", borderRadius: 99, border: `1px solid ${t.borderStrong}`,
                   background: "transparent", color: t.blueAccentText, cursor: "pointer", fontFamily: "'Inter', sans-serif", transition: "all 0.2s",
                 }}
