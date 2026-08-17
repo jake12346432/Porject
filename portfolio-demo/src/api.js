@@ -22,6 +22,18 @@ export async function submitBuy({ portfolioName, dollarAmount, holdings }) {
   return asJson(resp);
 }
 
+// Bonds have no live quote feed to hit — bondData.js already bakes in a price for each
+// instrument, so the frontend prices the order itself and this just persists the result
+// (see BondPortfolioBuilder.jsx's buildBondBuyOrder).
+export async function submitBondBuy({ portfolioName, poundAmount, holdings, totalAllocated, cash }) {
+  const resp = await fetch(`${API_BASE}/api/buy-bonds`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ portfolioName, poundAmount, holdings, totalAllocated, cash }),
+  });
+  return asJson(resp);
+}
+
 // Turns a plain-English portfolio request into the filter-panel config via a
 // server-side Claude API call (the server holds the API key, never the browser).
 export async function getAIPortfolioConfig({ prompt, sectors, regions }) {

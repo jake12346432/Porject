@@ -42,15 +42,29 @@ export function buildBuyList({ portfolioName, dollarAmount, holdings }, quotes) 
 }
 
 /**
- * Combines every buy list submitted for a given trade date into one workbook:
- *  - "Bulk Order": one row per ticker, net shares/dollars summed across ALL
- *    portfolios submitted that day — this is what actually gets placed as a
- *    single order at the next market open.
- *  - "Allocations": one row per (portfolio, ticker) so shares can be handed
- *    back out to the originating portfolio after the bulk order fills.
- *  - "Portfolios": one row per submitted portfolio, for a quick daily summary.
+ * Combines every buy list submitted for a given trade date into one workbook, one set of sheets
+ * per asset class actually submitted that day (equity uses tickers/shares/dollars; bonds use
+ * ISIN/coupon/maturity/YTM/duration and pounds — different enough fields that forcing them into
+ * one shared sheet shape would lose information, so each class gets its own three-sheet block):
+ *  - "Bulk Order": one row per instrument, net amount summed across ALL portfolios submitted
+ *    that day for that asset class — this is what actually gets placed as a single order at the
+ *    next market open.
+ *  - "Allocations": one row per (portfolio, instrument) so the position can be handed back out to
+ *    the originating portfolio after the bulk order fills.
+ *  - "Portfolios": one row per submitted portfolio in that asset class, for a quick daily summary.
  */
 export function buildDailyWorkbook(buyLists, tradeDate) {
+  const wb = XLSX.utils.book_new();
+  const equityLists = buyLists.filter(bl => bl.assetClass !== "bond");
+  const bondLists = buyLists.filter(bl => bl.assetClass === "bond");
+
+  if (equityLists.length) appendEquitySheets(wb, equityLists);
+  if (bondLists.length) appendBondSheets(wb, bondLists);
+
+  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+}
+
+function appendEquitySheets(wb, buyLists) {
   const byTicker = new Map();
   const allocations = [];
   const portfolioRows = [];
@@ -99,12 +113,65 @@ export function buildDailyWorkbook(buyLists, tradeDate) {
       "# Portfolios": t.portfolios.size,
     }));
 
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(bulkRows), "Bulk Order");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(allocations), "Allocations");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(portfolioRows), "Portfolios");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(bulkRows), "Equity Bulk Order");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(allocations), "Equity Allocations");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(portfolioRows), "Equity Portfolios");
+}
 
-  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+function appendBondSheets(wb, buyLists) {
+  const byIsin = new Map();
+  const allocations = [];
+  const portfolioRows = [];
+
+  for (const bl of buyLists) {
+    portfolioRows.push({
+      "Portfolio": bl.portfolioName,
+      "Submitted At": bl.createdAt,
+      "Target £": round2(bl.dollarAmount),
+      "Allocated £": round2(bl.totalAllocated),
+      "Cash £": round2(bl.cash),
+      "Holdings": bl.holdings.length,
+    });
+
+    for (const h of bl.holdings) {
+      allocations.push({
+        "Portfolio": bl.portfolioName,
+        "Instrument": h.name,
+        "ISIN": h.isin,
+        "Region": h.region,
+        "Sector": h.sector,
+        "Coupon %": h.coupon != null ? round2(h.coupon) : "",
+        "Maturity": h.maturity,
+        "YTM %": round2(h.ytm),
+        "Duration (y)": round2(h.duration),
+        "Price": h.price != null ? round2(h.price) : "",
+        "Amount £": round2(h.amount),
+        "Weight %": round2(h.weight),
+      });
+
+      const existing = byIsin.get(h.isin) || {
+        isin: h.isin, name: h.name, amount: 0, portfolios: new Set(), price: h.price,
+      };
+      existing.amount += h.amount;
+      existing.portfolios.add(bl.portfolioName);
+      existing.price = h.price; // most recent price wins
+      byIsin.set(h.isin, existing);
+    }
+  }
+
+  const bulkRows = [...byIsin.values()]
+    .sort((a, b) => b.amount - a.amount)
+    .map(b => ({
+      "Instrument": b.name,
+      "ISIN": b.isin,
+      "Latest Price": b.price != null ? round2(b.price) : "",
+      "Total Amount £": round2(b.amount),
+      "# Portfolios": b.portfolios.size,
+    }));
+
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(bulkRows), "Bond Bulk Order");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(allocations), "Bond Allocations");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(portfolioRows), "Bond Portfolios");
 }
 
 const round2 = (n) => Math.round(n * 100) / 100;

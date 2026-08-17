@@ -11,11 +11,16 @@ The app has two tabs, switchable from the nav bar (Equity is the default):
   below, with live pricing, the AI "describe what you want" box, and the buy/
   order-book backend.
 - **Fixed Income** (`src/BondPortfolioBuilder.jsx` + `src/bondData.js`) — a
-  bond portfolio builder over 184 real, named government/corporate bonds
-  (sourced from the published holdings of AGG/LQD/EMB). It's fully
-  client-side — no backend, no live pricing, no buy flow — so it works with
-  just `npm run dev` and needs none of the API keys below. See its
-  in-app disclosure for exactly what's real data vs. calculated.
+  GBP corporate-bond portfolio builder. All filters are hard filters (region,
+  sector, YTM range, duration range — no soft/preference tilts), over a
+  placeholder universe of 184 real, named bonds sourced from the published
+  holdings of AGG/LQD/EMB (an official GBP corporate bond list is expected to
+  replace this data shortly — see its in-app disclosure). Unlike the original
+  version of this tab, it now shares the real buy/order-book backend with
+  Equity: bonds are priced from the static `price` field already in
+  `bondData.js` (no live quote fetch needed, since there's no feed for
+  bonds), sized into an order, and saved alongside equity buys into the same
+  daily combined order book and email — see "What the buy feature does" below.
 
 Both tabs share the same light/dark theme toggle and visual language, but
 run independent portfolio-building state — switching tabs doesn't preserve
@@ -80,16 +85,20 @@ everything else in the app (filters, templates, buying) works exactly the same.
 
 ### Daily combined-order email
 
-The combined order book (every portfolio anyone bought that day, netted into
-one bulk order) is **not downloadable from the site** — it goes out once a
-day by email instead, sent by an external scheduler rather than anyone
-clicking a button in the browser. See "Hosting it" below for the full setup
-(a Resend account + a GitHub Actions secret or two); until that's
-configured, `POST /api/daily-orders/email-report` returns a clear
-"not set up yet" error, same pattern as the other optional integrations.
+The combined order book (every portfolio anyone bought that day, across
+**both** Equity and Fixed Income, netted into one bulk order per asset class)
+is **not downloadable from the site** — it goes out once a day by email
+instead, sent by an external scheduler rather than anyone clicking a button
+in the browser. The recipient defaults to `jake.vendrell@titanwh.com`;
+`DAILY_REPORT_EMAIL` only needs setting to override that default. See
+"Hosting it" below for the full setup (a Resend account + a GitHub Actions
+secret or two); until that's configured, `POST /api/daily-orders/email-report`
+returns a clear "not set up yet" error, same pattern as the other optional
+integrations.
 
 ## What the buy feature does
 
+**Equity:**
 1. **Generate a portfolio** as usual (template, filters, or the AI box).
 2. In the **"Prices all N current holdings…"** panel, give it a portfolio
    name (prefilled from the generated portfolio's name) and a dollar amount,
@@ -98,23 +107,34 @@ configured, `POST /api/daily-orders/email-report` returns a clear
    Twelve Data as a fallback for whatever Finnhub can't price (see "Live
    pricing" above) — sizes the order (shares = weight × dollar amount ÷
    price, weights renormalized among just the holdings that got a price),
-   and **saves it** to a SQLite database tagged with today's date. Any
-   holding with no live quote on either provider is skipped and called out
-   in the confirmation message rather than silently guessed at. Quotes are
-   cached for 60 seconds server-side and shared across everyone using the
-   app, so overlapping holdings across different people's portfolios don't
-   each cost a fresh API call.
-4. That's it from the browser's point of view — no combined-order panel or
-   download button on the site. Once a day (15:00 UTC, see "Hosting it"),
-   everyone's buys from that day get combined into one workbook and emailed
-   out:
-   - **Bulk Order** sheet — one row per ticker, net shares/dollars summed
-     across *every* portfolio submitted that day. This is what you'd actually
-     place as a single order at market open.
-   - **Allocations** sheet — one row per (portfolio, ticker), so shares can
-     be handed back out to the right client/portfolio after the bulk order
-     fills.
-   - **Portfolios** sheet — a quick summary of what was submitted.
+   and **saves it** to a SQLite database tagged with today's date and asset
+   class `equity`. Any holding with no live quote on either provider is
+   skipped and called out in the confirmation message rather than silently
+   guessed at. Quotes are cached for 60 seconds server-side and shared across
+   everyone using the app, so overlapping holdings across different people's
+   portfolios don't each cost a fresh API call.
+
+**Fixed Income:** the same shape, minus the live-quote step — bonds are
+already priced by the static `price` field in `bondData.js` (clean price per
+£100 face value), so the frontend sizes the order itself (£ amount = weight
+× portfolio value, using only bonds that have a price) and `POST
+/api/buy-bonds` just validates and persists it tagged asset class `bond`.
+Give it a portfolio name and a £ portfolio value, hit **Buy portfolio**, done.
+
+Either way, that's it from the browser's point of view — no combined-order
+panel or download button on the site. Once a day (15:00 UTC, see "Hosting
+it"), everyone's buys from that day get combined into one workbook and
+emailed out, with a separate three-sheet block per asset class actually
+submitted that day (an asset class with nothing submitted just doesn't get a
+sheet):
+   - **Equity/Bond Bulk Order** sheet — one row per ticker/ISIN, net
+     shares-or-£-amount summed across *every* portfolio of that asset class
+     submitted that day. This is what you'd actually place as a single order
+     at market open.
+   - **Equity/Bond Allocations** sheet — one row per (portfolio, instrument),
+     so the position can be handed back out to the right client/portfolio
+     after the bulk order fills.
+   - **Equity/Bond Portfolios** sheet — a quick summary of what was submitted.
 
 No trade is ever actually placed — there is no brokerage connection. This
 produces an order sheet for manual execution, by design (see the chat history
@@ -136,13 +156,18 @@ through each once deployed and fix the table if any land wrong.
 ```
 portfolio-demo/
 ├─ src/                  React frontend (Vite)
-│  ├─ PortfolioBuilder.jsx   the whole app
+│  ├─ App.jsx                 tab switcher — holds theme/activeTab, renders
+│  │                           whichever builder is active
+│  ├─ PortfolioBuilder.jsx    Equity tab
+│  ├─ BondPortfolioBuilder.jsx  Fixed Income tab
+│  ├─ bondData.js              placeholder GBP/USD bond universe (184 bonds)
 │  └─ api.js                 thin client for the backend endpoints below
 └─ server/                Express + SQLite backend
    ├─ index.js               routes, auth middleware, static frontend serving
    ├─ auth.js                shared-password HTTP Basic Auth
    ├─ quotes.js              orchestrates Finnhub -> Twelve Data fallback,
                               60s caching, per-provider rate limiting
+                              (equity only — bonds are priced client-side)
    ├─ providers/
    │  ├─ symbolMap.js         {exch, ticker} -> each provider's symbol format
    │  ├─ finnhub.js           Finnhub /quote fetch
@@ -150,9 +175,11 @@ portfolio-demo/
    ├─ ai.js                  server-side Claude API call for the AI box
    ├─ email.js               builds today's workbook + sends it via Resend
    ├─ orders.js              pricing math + Excel workbook generation
+                              (separate equity/bond sheet blocks)
    ├─ db.js                  SQLite schema + queries (Node's built-in node:sqlite —
                               deliberately not better-sqlite3, which needs a C++
-                              compiler to install and fails on machines without one)
+                              compiler to install and fails on machines without one;
+                              buy_lists rows are tagged asset_class 'equity'/'bond')
    ├─ test-local.mjs         exercises db/orders logic with fake quotes,
                               no network needed
    └─ test-quotes-local.mjs  exercises quotes.js's provider fallback/caching/
@@ -164,20 +191,27 @@ portfolio-demo/
 
 **Endpoints:**
 - `POST /api/buy` — `{ portfolioName, dollarAmount, holdings }` → prices,
-  sizes, and persists a buy list; returns it. Each holding needs both
+  sizes, and persists an equity buy list; returns it. Each holding needs both
   `ticker` and `exch` (the exchange code) — the provider symbol mapping
   needs both, not just the ticker alone.
+- `POST /api/buy-bonds` — `{ portfolioName, poundAmount, holdings, totalAllocated, cash }`
+  → persists an already-priced-and-sized bond buy list (pricing/sizing
+  happens client-side in `BondPortfolioBuilder.jsx`, since bond prices are
+  static data, not a live quote); returns it.
 - `POST /api/daily-orders/email-report` — builds today's combined-order
-  workbook and emails it to `DAILY_REPORT_EMAIL` via Resend. Meant to be
-  called by the GitHub Actions cron job, not a person — see "Hosting it".
+  workbook (equity + bond sheets) and emails it to `DAILY_REPORT_EMAIL` (or
+  the `jake.vendrell@titanwh.com` default) via Resend. Meant to be called by
+  the GitHub Actions cron job, not a person — see "Hosting it".
 - `GET /api/daily-orders/summary?date=YYYY-MM-DD` and
-  `GET /api/daily-orders?date=YYYY-MM-DD` — JSON summary / `.xlsx` download
-  for a given day. Not linked from the UI anymore (the email is the intended
-  delivery path); kept as a manual fallback you can hit directly if needed.
+  `GET /api/daily-orders?date=YYYY-MM-DD` — JSON summary (with separate
+  equity/bond totals) / `.xlsx` download for a given day. Not linked from the
+  UI anymore (the email is the intended delivery path); kept as a manual
+  fallback you can hit directly if needed.
 - `POST /api/quotes` — `{ holdings: [{ticker, exch}, ...] }` → raw quotes, no
   persistence. Not currently called by the frontend; kept for debugging.
 - `POST /api/ai/portfolio-config` — `{ prompt, sectors, regions }` → the AI
-  box's filter config, via a server-side Claude API call.
+  box's filter config, via a server-side Claude API call. Equity only — the
+  Fixed Income tab has no AI box.
 
 Storage is a single SQLite file at `server/data/buylist.db` (gitignored,
 created automatically on first run). Fine for a demo/single-instance
@@ -210,7 +244,8 @@ login prompt, no custom login page needed).
    - `TWELVEDATA_API_KEY` — needed for international holdings to price
    - `ANTHROPIC_API_KEY` — only needed for the AI box
    - `RESEND_API_KEY` — needed for the daily order email
-   - `DAILY_REPORT_EMAIL` — who receives it (comma-separate for multiple people)
+   - `DAILY_REPORT_EMAIL` — optional; defaults to `jake.vendrell@titanwh.com`
+     if left unset (comma-separate for multiple people if you do set it)
 9. **Create Web Service.** Render builds and deploys automatically, and gives
    you a URL like `https://titan-wealth-xxxx.onrender.com`. Share that URL
    plus the username/password with whoever needs access — never put them in

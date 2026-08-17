@@ -59,6 +59,7 @@ app.post("/api/buy", async (req, res) => {
     const tradeDate = todayStr();
     const id = insertBuyList({
       tradeDate,
+      assetClass: "equity",
       portfolioName: buyList.portfolioName,
       dollarAmount: buyList.dollarAmount,
       totalAllocated: buyList.totalAllocated,
@@ -72,6 +73,34 @@ app.post("/api/buy", async (req, res) => {
   }
 });
 
+// Bonds have no live quote feed — bondData.js already bakes in a price for each instrument, so
+// the frontend prices and sizes the order itself (see BondPortfolioBuilder.jsx) and this endpoint
+// just validates and PERSISTS the already-priced result, no server-side pricing step needed.
+app.post("/api/buy-bonds", (req, res) => {
+  const { portfolioName, poundAmount, holdings, totalAllocated, cash } = req.body || {};
+  if (!portfolioName || typeof poundAmount !== "number" || poundAmount <= 0 || !Array.isArray(holdings) || holdings.length === 0) {
+    return res.status(400).json({ error: "Body must include portfolioName, a positive poundAmount, and a non-empty holdings array." });
+  }
+  if (typeof totalAllocated !== "number" || typeof cash !== "number") {
+    return res.status(400).json({ error: "Body must include numeric totalAllocated and cash." });
+  }
+  try {
+    const tradeDate = todayStr();
+    const id = insertBuyList({
+      tradeDate,
+      assetClass: "bond",
+      portfolioName,
+      dollarAmount: poundAmount,
+      totalAllocated,
+      cash,
+      holdings,
+    });
+    res.json({ id, tradeDate, portfolioName, poundAmount, holdings, totalAllocated, cash });
+  } catch (err) {
+    res.status(502).json({ error: "Failed to save bond buy list: " + err.message });
+  }
+});
+
 // Quick summary of what's been submitted for a given day (defaults to today).
 // Not surfaced in the UI — the daily roll-up goes out by email (see
 // /api/daily-orders/email-report below) rather than being downloadable by
@@ -79,15 +108,19 @@ app.post("/api/buy", async (req, res) => {
 app.get("/api/daily-orders/summary", (req, res) => {
   const date = req.query.date || todayStr();
   const buyLists = getBuyListsForDate(date);
+  const equity = buyLists.filter(bl => bl.assetClass !== "bond");
+  const bonds = buyLists.filter(bl => bl.assetClass === "bond");
   res.json({
     tradeDate: date,
     count: buyLists.length,
-    totalDollars: buyLists.reduce((a, b) => a + b.dollarAmount, 0),
+    totalDollars: equity.reduce((a, b) => a + b.dollarAmount, 0),
+    totalPounds: bonds.reduce((a, b) => a + b.dollarAmount, 0),
     portfolios: buyLists.map(bl => ({
       id: bl.id,
+      assetClass: bl.assetClass,
       portfolioName: bl.portfolioName,
       createdAt: bl.createdAt,
-      dollarAmount: bl.dollarAmount,
+      amount: bl.dollarAmount,
       holdingCount: bl.holdings.length,
     })),
   });
