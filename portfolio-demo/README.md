@@ -21,12 +21,16 @@ way to jump straight to Equity or Fixed Income; you go through in order:
    build-your-own filters). Ends with **Buy portfolio**, then **Continue to
    Fixed Income →**.
 3. **Fixed Income** (`src/BondPortfolioBuilder.jsx` + `src/bondData.js`) — a
-   GBP corporate-bond portfolio builder. All filters are hard filters
-   (region, sector, credit rating, YTM range, duration range — no
-   soft/preference tilts), over a placeholder universe of 184 real, named
-   bonds sourced from the published holdings of AGG/LQD/EMB (an official
-   GBP corporate bond list is expected to replace this data shortly — see
-   its in-app disclosure). Bonds are priced from the static `price` field
+   bond portfolio builder, ultimately meant to be GBP-corporate-only, but
+   that lock is **temporarily switched off** — the placeholder universe (184
+   real, named bonds sourced from the published holdings of AGG/LQD/EMB) is
+   almost entirely government issuers in non-GBP currencies, so restricting
+   to GBP corporates left almost nothing buildable. Government issuers and
+   other currencies are back in the eligible universe until the official GBP
+   corporate bond list arrives (see its in-app disclosure), at which point
+   both locks should be re-added in `passesFilters`. All filters are still
+   hard filters (region, sector, credit rating, YTM range, duration range —
+   no soft/preference tilts). Bonds are priced from the static `price` field
    already in `bondData.js` (no live quote fetch needed — there's no feed
    for bonds). Ends with **Buy portfolio**, then **Continue to Dashboard →**.
 4. **Dashboard** (`src/Dashboard.jsx`) — shows the whole portfolio: the

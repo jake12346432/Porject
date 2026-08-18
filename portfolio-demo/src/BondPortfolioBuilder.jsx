@@ -4,19 +4,10 @@ import { BONDS, REGIONS, SECTORS, YTM_MIN, YTM_MAX, DURATION_MIN, DURATION_MAX }
 import { submitBondBuy } from "./api.js";
 import { FlowBreadcrumb } from "./shared.jsx";
 
-// REGIONS/SECTORS from bondData.js span the full dataset, including government-only categories
-// (e.g. "Emerging Markets" has no Corporate bonds at all; "Sovereign"/"Treasury"/"Agency"/"MBS
-// Pass-Through" are gov-only sectors). Now that Corporate is the only eligible govCorp value
-// (see passesFilters), offering those as filter chips would be a dead end — selecting them could
-// never match anything. These derive the chip lists from what Corporate bonds actually have.
-const CORPORATE_BONDS = BONDS.filter(b => b.govCorp === "Corporate");
-const CORPORATE_REGIONS = [...new Set(CORPORATE_BONDS.map(b => b.region))].sort();
-const CORPORATE_SECTORS = [...new Set(CORPORATE_BONDS.map(b => b.sector))].sort();
-
 // Fixed S&P/Fitch-style rating bands, independent of what's currently in bondData.js — the
 // placeholder dataset has no rating field at all, so every bond falls into "NR" (not rated) until
 // the official list (which will include real ratings) replaces it. Defined as a fixed scale rather
-// than derived from the data (unlike CORPORATE_REGIONS/SECTORS above) precisely so the filter is
+// than derived from the data (unlike REGIONS/SECTORS, imported above) precisely so the filter is
 // ready and correct the moment real ratings land, with no code change needed.
 const RATING_BANDS = ["AAA", "AA", "A", "BBB", "BB", "B", "CCC & below", "NR"];
 function ratingBand(b) {
@@ -67,37 +58,39 @@ function ConceptLink({ term, children, t }) {
   );
 }
 
-/* ============================== TEMPLATES — corporate-only, GBP-only, purely hard filters ============================== */
+/* ============================== TEMPLATES — purely hard filters ============================== */
+// Names/blurbs dropped "Corporate" for now — with the Corporate-only lock off (see passesFilters),
+// none of these restrict to corporate issuers, so a name promising that would be inaccurate.
 const TEMPLATES = [
   {
-    name: "Short-Duration Corporate Income",
-    blurb: "Corporate bonds under 4 years duration — income with lower sensitivity to rate moves.",
+    name: "Short-Duration Income",
+    blurb: "Bonds under 4 years duration — income with lower sensitivity to rate moves.",
     config: { regions: [], sectors: [], ratings: [], ytmMin: YTM_MIN, ytmMax: YTM_MAX, durationMin: DURATION_MIN, durationMax: 4 },
   },
   {
-    name: "UK & European Corporate",
-    blurb: "Corporate bonds from UK and European issuers, across the full yield and duration range.",
+    name: "UK & European",
+    blurb: "Bonds from UK and European issuers, across the full yield and duration range.",
     config: { regions: ["UK", "Europe"], sectors: [], ratings: [], ytmMin: YTM_MIN, ytmMax: YTM_MAX, durationMin: DURATION_MIN, durationMax: DURATION_MAX },
   },
   {
     name: "Technology & Communications",
-    blurb: "Corporate bonds from technology and communications issuers only.",
+    blurb: "Bonds from technology and communications issuers only.",
     config: { regions: [], sectors: ["Technology", "Communications"], ratings: [], ytmMin: YTM_MIN, ytmMax: YTM_MAX, durationMin: DURATION_MIN, durationMax: DURATION_MAX },
   },
   {
-    name: "Diversified Corporate Core",
-    blurb: "A broad, balanced blend of corporate bonds across every region and sector in the universe.",
+    name: "Diversified Core",
+    blurb: "A broad, balanced blend of bonds across every region and sector in the universe.",
     config: { regions: [], sectors: [], ratings: [], ytmMin: YTM_MIN, ytmMax: YTM_MAX, durationMin: DURATION_MIN, durationMax: DURATION_MAX },
   },
 ];
 
 /* ============================== HELPERS ============================== */
 // The hard-filter predicate, shared by the engine and the live "N bonds eligible" preview so they
-// always agree on what would pass. Corporate-only and GBP-only are permanent, non-adjustable
-// policy — not user-facing toggles — so they're baked in here rather than read off filter state.
+// always agree on what would pass. The Corporate-only and GBP-only locks are OFF for now — the
+// placeholder universe barely has any GBP corporate bonds, so keeping them on left almost nothing
+// buildable. Government/government-related issuers and non-GBP currencies are back in the
+// universe until the official GBP corporate bond list arrives; re-add both checks then.
 function passesFilters(b, p) {
-  if (b.govCorp !== "Corporate") return false;
-  if (b.currency !== "GBP") return false;
   if (!p.regionFilter.has(b.region)) return false;
   if (!p.sectorFilter.has(b.sector)) return false;
   if (!p.ratingFilter.has(ratingBand(b))) return false;
@@ -129,18 +122,17 @@ function describeBondPortfolio(p, stats) {
   const nameBits = [];
   if (singleRegion) nameBits.push(singleRegion);
   if (singleSector) nameBits.push(singleSector);
-  nameBits.push("Corporate Bond Portfolio");
+  nameBits.push("Bond Portfolio");
   const name = nameBits.join(" ");
 
-  const blurb = `A ${stats.count}-bond, equally-weighted portfolio of GBP corporate bonds yielding ${stats.wYtm.toFixed(2)}% with ${stats.wDuration.toFixed(1)}-year average duration. Every bond that clears your region, sector, rating, YTM and duration filters is included — no preference weighting is applied.`;
+  const blurb = `A ${stats.count}-bond, equally-weighted portfolio yielding ${stats.wYtm.toFixed(2)}% with ${stats.wDuration.toFixed(1)}-year average duration. Every bond that clears your region, sector, rating, YTM and duration filters is included — no preference weighting is applied.`;
   return { name, blurb };
 }
 
-// Purely hard-filter driven: every bond clearing region/sector/YTM/duration (and the permanent
-// Corporate + GBP lock in passesFilters) is included, equally weighted — there's no scoring or
-// preference dial pulling the selection or the weighting toward anything. If more bonds qualify
-// than MAX_HOLDINGS, the highest-YTM names are kept — a transparent, factual tiebreaker, not a
-// preference setting.
+// Purely hard-filter driven: every bond clearing region/sector/rating/YTM/duration in
+// passesFilters is included, equally weighted — there's no scoring or preference dial pulling the
+// selection or the weighting toward anything. If more bonds qualify than MAX_HOLDINGS, the
+// highest-YTM names are kept — a transparent, factual tiebreaker, not a preference setting.
 function computePortfolio(p) {
   const universe = BONDS.filter(b => passesFilters(b, p));
   if (universe.length === 0) {
@@ -419,8 +411,8 @@ function AllocBarChart({ data, t, color }) {
 export default function BondPortfolioBuilder({ theme, setTheme, rpq, onBuyComplete }) {
   const t = THEMES[theme];
 
-  const [regionFilter, setRegionFilter] = useState(new Set(CORPORATE_REGIONS));
-  const [sectorFilter, setSectorFilter] = useState(new Set(CORPORATE_SECTORS));
+  const [regionFilter, setRegionFilter] = useState(new Set(REGIONS));
+  const [sectorFilter, setSectorFilter] = useState(new Set(SECTORS));
   const [ratingFilter, setRatingFilter] = useState(new Set(RATING_BANDS));
   const [ytmMin, setYtmMin] = useState(YTM_MIN);
   const [ytmMax, setYtmMax] = useState(YTM_MAX);
@@ -459,8 +451,8 @@ export default function BondPortfolioBuilder({ theme, setTheme, rpq, onBuyComple
   function applyTemplate(tpl) {
     const c = tpl.config;
     setActiveTemplate(tpl.name);
-    setRegionFilter(c.regions.length ? new Set(c.regions) : new Set(CORPORATE_REGIONS));
-    setSectorFilter(c.sectors.length ? new Set(c.sectors) : new Set(CORPORATE_SECTORS));
+    setRegionFilter(c.regions.length ? new Set(c.regions) : new Set(REGIONS));
+    setSectorFilter(c.sectors.length ? new Set(c.sectors) : new Set(SECTORS));
     setRatingFilter(c.ratings?.length ? new Set(c.ratings) : new Set(RATING_BANDS));
     setYtmMin(c.ytmMin);
     setYtmMax(c.ytmMax);
@@ -470,8 +462,8 @@ export default function BondPortfolioBuilder({ theme, setTheme, rpq, onBuyComple
 
   function resetAll() {
     setActiveTemplate(null);
-    setRegionFilter(new Set(CORPORATE_REGIONS));
-    setSectorFilter(new Set(CORPORATE_SECTORS));
+    setRegionFilter(new Set(REGIONS));
+    setSectorFilter(new Set(SECTORS));
     setRatingFilter(new Set(RATING_BANDS));
     setYtmMin(YTM_MIN);
     setYtmMax(YTM_MAX);
@@ -692,7 +684,7 @@ export default function BondPortfolioBuilder({ theme, setTheme, rpq, onBuyComple
               padding: theme === "dark" ? 0 : "4px 14px", borderRadius: 12,
               background: theme === "dark" ? "transparent" : "rgba(255,255,255,0.82)",
             }}>
-              Set your filters and we'll screen GBP-denominated corporate bonds only — every bond that clears your filters is included, equally weighted. No government or government-related issuers, and no preference weighting.
+              Set your filters and we'll screen every bond that clears them, equally weighted — no preference weighting. Government and multi-currency issuers are temporarily included (see the note below) until the official GBP corporate bond list arrives.
             </div>
             <div style={{ marginTop: 18, color: t.orange, fontSize: 18 }} aria-hidden="true">↓</div>
           </div>
@@ -721,28 +713,31 @@ export default function BondPortfolioBuilder({ theme, setTheme, rpq, onBuyComple
         </div>
 
         <div style={{ fontSize: 12, color: t.faint, textAlign: "center", marginBottom: 20, maxWidth: 700, marginLeft: "auto", marginRight: "auto", lineHeight: 1.5 }}>
-          Corporate issuers only, priced in GBP. The credit rating filter is live, but the current
-          placeholder data has no rating column — every bond shows as "NR" (not rated) until the
-          official list with real ratings replaces it, at which point this filter works automatically.
+          Corporate-only and GBP-only are temporarily switched off — the placeholder data barely
+          has any GBP corporate bonds, so government issuers and other currencies are included for
+          now to keep this usable. Both locks come back once the official GBP corporate bond list
+          arrives. The credit rating filter is live, but the current placeholder data has no rating
+          column — every bond shows as "NR" (not rated) until the official list with real ratings
+          replaces it, at which point this filter works automatically.
         </div>
 
         {/* ============ FILTERS ============ */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginBottom: 10 }}>
           <FilterCard t={t} heading="Region" description="Which parts of the world can appear in your portfolio.">
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-              <ResetButton t={t} onClick={() => { markDirty(); setRegionFilter(new Set(CORPORATE_REGIONS)); }}>Select all</ResetButton>
+              <ResetButton t={t} onClick={() => { markDirty(); setRegionFilter(new Set(REGIONS)); }}>Select all</ResetButton>
             </div>
-            <div>{CORPORATE_REGIONS.map(r => (
+            <div>{REGIONS.map(r => (
               <Chip key={r} t={t} active={regionFilter.has(r)} onClick={() => toggleRegion(r)}>{r}</Chip>
             ))}</div>
           </FilterCard>
 
           <FilterCard t={t} heading="Sector" description="Which corporate bond categories — banking, technology, energy, etc. — can appear.">
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-              <ResetButton t={t} onClick={() => { markDirty(); setSectorFilter(new Set(CORPORATE_SECTORS)); }}>Select all</ResetButton>
+              <ResetButton t={t} onClick={() => { markDirty(); setSectorFilter(new Set(SECTORS)); }}>Select all</ResetButton>
             </div>
             <div style={{ maxHeight: 130, overflowY: "auto", paddingRight: 4 }}>
-              {CORPORATE_SECTORS.map(s => (
+              {SECTORS.map(s => (
                 <Chip key={s} t={t} active={sectorFilter.has(s)} onClick={() => toggleSector(s)}>{s}</Chip>
               ))}
             </div>
@@ -792,7 +787,7 @@ export default function BondPortfolioBuilder({ theme, setTheme, rpq, onBuyComple
 
         <div style={{ textAlign: "center", marginBottom: 8 }}>
           <div style={{ fontSize: 11.5, color: t.faint }}>
-            {liveEligible} GBP corporate bonds currently eligible
+            {liveEligible} bonds currently eligible
           </div>
         </div>
 
@@ -815,7 +810,7 @@ export default function BondPortfolioBuilder({ theme, setTheme, rpq, onBuyComple
 
         {portfolio && !stats && (
           <div style={{ textAlign: "center", color: t.negative, padding: "50px 20px", border: `1px solid ${t.negative}`, borderRadius: 12 }}>
-            No GBP corporate bonds match this combination of filters — widen your region, sector, YTM or duration range and try again. If this happens on every combination, the loaded bond data may not yet include any GBP-denominated corporate bonds.
+            No bonds match this combination of filters — widen your region, sector, rating, YTM or duration range and try again.
           </div>
         )}
 
@@ -974,11 +969,13 @@ export default function BondPortfolioBuilder({ theme, setTheme, rpq, onBuyComple
             )}
 
             <div style={{ textAlign: "center", marginTop: 40, fontSize: 11.5, color: t.faint, lineHeight: 1.6, maxWidth: 720, marginLeft: "auto", marginRight: "auto" }}>
-              This is placeholder bond data pending an official GBP corporate bond list. Duration is
-              calculated from each bond's coupon, maturity and YTM using standard bond math, not
-              published directly. Treat all prices, YTMs and durations as a stale snapshot for
-              prototyping, not tradeable quotes — this is not investment advice, and no rating data
-              is available or shown.
+              This is placeholder bond data pending an official GBP corporate bond list — government
+              issuers and non-GBP currencies are temporarily included to keep the universe usable in
+              the meantime, so the £ figures below reflect your target allocation, not a guaranteed
+              single-currency price. Duration is calculated from each bond's coupon, maturity and
+              YTM using standard bond math, not published directly. Treat all prices, YTMs and
+              durations as a stale snapshot for prototyping, not tradeable quotes — this is not
+              investment advice, and no rating data is available or shown.
             </div>
           </div>
         )}
