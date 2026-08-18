@@ -2,29 +2,67 @@
 
 A portfolio screener/builder (React + Vite) with a small Express + SQLite
 backend for the "buy" feature: pricing a generated portfolio at current
-market prices, saving it, and combining everyone's buys for the day into one
-bulk order sheet for the next market open.
+market prices, saving it, and combining everyone's buys (and sells) for the
+day into one bulk order sheet for the next market open.
 
-The app has two tabs, switchable from the nav bar (Equity is the default):
+## The guided flow
 
-- **Equity** (`src/PortfolioBuilder.jsx`) — the stock screener described
-  below, with live pricing, the AI "describe what you want" box, and the buy/
-  order-book backend.
-- **Fixed Income** (`src/BondPortfolioBuilder.jsx` + `src/bondData.js`) — a
-  GBP corporate-bond portfolio builder. All filters are hard filters (region,
-  sector, YTM range, duration range — no soft/preference tilts), over a
-  placeholder universe of 184 real, named bonds sourced from the published
-  holdings of AGG/LQD/EMB (an official GBP corporate bond list is expected to
-  replace this data shortly — see its in-app disclosure). Unlike the original
-  version of this tab, it now shares the real buy/order-book backend with
-  Equity: bonds are priced from the static `price` field already in
-  `bondData.js` (no live quote fetch needed, since there's no feed for
-  bonds), sized into an order, and saved alongside equity buys into the same
-  daily combined order book and email — see "What the buy feature does" below.
+The site is one linear flow, not a pair of free-standing tabs — there's no
+way to jump straight to Equity or Fixed Income; you go through in order:
 
-Both tabs share the same light/dark theme toggle and visual language, but
-run independent portfolio-building state — switching tabs doesn't preserve
-whatever you'd built on the other one.
+1. **Risk profile** (`src/RiskQuestionnaire.jsx`) — a mock RPQ (risk profile
+   questionnaire). The real thing would score a series of questions about
+   time horizon, loss tolerance, etc.; this stands in for that scoring model
+   with a direct pick of the target split (a slider + a few presets), since
+   the real model isn't built yet. Produces an Equity % / Fixed Income %
+   target, same shape a real RPQ would hand off.
+2. **Equity** (`src/PortfolioBuilder.jsx`) — the stock screener described
+   below (live pricing, the AI "describe what you want" box, templates,
+   build-your-own filters). Ends with **Buy portfolio**, then **Continue to
+   Fixed Income →**.
+3. **Fixed Income** (`src/BondPortfolioBuilder.jsx` + `src/bondData.js`) — a
+   GBP corporate-bond portfolio builder. All filters are hard filters
+   (region, sector, credit rating, YTM range, duration range — no
+   soft/preference tilts), over a placeholder universe of 184 real, named
+   bonds sourced from the published holdings of AGG/LQD/EMB (an official
+   GBP corporate bond list is expected to replace this data shortly — see
+   its in-app disclosure). Bonds are priced from the static `price` field
+   already in `bondData.js` (no live quote fetch needed — there's no feed
+   for bonds). Ends with **Buy portfolio**, then **Continue to Dashboard →**.
+4. **Dashboard** (`src/Dashboard.jsx`) — shows the whole portfolio: the
+   target split from step 1 as a chart, a stat tile per leg (equity
+   invested in $, fixed income invested in £ — shown separately since
+   blending USD and GBP into one figure would need a live FX rate this demo
+   doesn't have), each leg's region/sector allocation charts and top 10
+   holdings, and **Sell** buttons (Equity only / Fixed Income only / entire
+   portfolio) that liquidate the corresponding leg — see "Selling" below.
+
+There's no login system, so "your portfolio" persistence is just a
+server-generated id the browser keeps in `localStorage`
+(`src/App.jsx` — the flow's orchestrator) — reopening the site with that id
+saved resumes straight at the Dashboard, or (if only the Equity leg was
+finished) offers to pick up Fixed Income where you left off. There's no
+cross-device access and nothing tied to a real account; clearing the
+browser's storage (or hitting "Start a new portfolio" on the Dashboard)
+starts a fresh one.
+
+Both builder steps share the same light/dark theme toggle and visual
+language (`src/shared.jsx` holds the palette and chart components common to
+the flow-level screens).
+
+### Selling
+
+The Dashboard's Sell buttons are a real sell order, not just a status flag —
+they mirror buying:
+- **Equity** is requoted at current market prices (same live-pricing path as
+  buying) and liquidates every share held.
+- **Fixed Income** has no live feed, so it re-records the same holdings the
+  bond leg was bought with — "current price" and "buy price" are the same
+  static number in this demo.
+
+Either way the resulting sell lands in the same `buy_lists` table (tagged
+`side: 'sell'`) and daily order book/email as buys — see "What the buy
+feature does" below for how buys and sells both flow into that report.
 
 ## Running it
 
@@ -123,18 +161,22 @@ Give it a portfolio name and a £ portfolio value, hit **Buy portfolio**, done.
 
 Either way, that's it from the browser's point of view — no combined-order
 panel or download button on the site. Once a day (15:00 UTC, see "Hosting
-it"), everyone's buys from that day get combined into one workbook and
-emailed out, with a separate three-sheet block per asset class actually
-submitted that day (an asset class with nothing submitted just doesn't get a
-sheet):
-   - **Equity/Bond Bulk Order** sheet — one row per ticker/ISIN, net
+it"), everyone's buys **and sells** (see "Selling" above — a sell is the
+same shape as a buy, just tagged `side: 'sell'`) from that day get combined
+into one workbook and emailed out, with a separate three-sheet block per
+asset class actually submitted that day (an asset class with nothing
+submitted just doesn't get a sheet):
+   - **Equity/Bond Bulk Order** sheet — one row per (ticker/ISIN, side), net
      shares-or-£-amount summed across *every* portfolio of that asset class
-     submitted that day. This is what you'd actually place as a single order
-     at market open.
-   - **Equity/Bond Allocations** sheet — one row per (portfolio, instrument),
-     so the position can be handed back out to the right client/portfolio
-     after the bulk order fills.
-   - **Equity/Bond Portfolios** sheet — a quick summary of what was submitted.
+     and side submitted that day. This is what you'd actually place as
+     orders at market open — buys and sells are listed separately, not
+     netted against each other, so a buy and a sell of the same instrument
+     on the same day both show up rather than silently cancelling out.
+   - **Equity/Bond Allocations** sheet — one row per (portfolio, instrument,
+     side), so the position can be handed back out to the right
+     client/portfolio after the bulk order fills.
+   - **Equity/Bond Portfolios** sheet — a quick summary of what was
+     submitted, per side.
 
 No trade is ever actually placed — there is no brokerage connection. This
 produces an order sheet for manual execution, by design (see the chat history
@@ -156,12 +198,19 @@ through each once deployed and fix the table if any land wrong.
 ```
 portfolio-demo/
 ├─ src/                  React frontend (Vite)
-│  ├─ App.jsx                 tab switcher — holds theme/activeTab, renders
-│  │                           whichever builder is active
-│  ├─ PortfolioBuilder.jsx    Equity tab
-│  ├─ BondPortfolioBuilder.jsx  Fixed Income tab
+│  ├─ App.jsx                 the guided flow's orchestrator — holds theme/step/rpq/
+│  │                           portfolioId state, renders whichever step is active,
+│  │                           persists the portfolio id to localStorage
+│  ├─ RiskQuestionnaire.jsx    step 1 — mock RPQ (Equity/Fixed Income % split)
+│  ├─ PortfolioBuilder.jsx     step 2 — Equity builder
+│  ├─ BondPortfolioBuilder.jsx step 3 — Fixed Income builder
+│  ├─ Dashboard.jsx            step 4 — combined portfolio view + Sell buttons
+│  ├─ shared.jsx               palette + chart components shared by the flow-level
+│  │                           screens (RiskQuestionnaire, Dashboard, App's step
+│  │                           breadcrumb) — PortfolioBuilder/BondPortfolioBuilder
+│  │                           each keep their own copy of these, predating the flow
 │  ├─ bondData.js              placeholder GBP/USD bond universe (184 bonds)
-│  └─ api.js                 thin client for the backend endpoints below
+│  └─ api.js                  thin client for the backend endpoints below
 └─ server/                Express + SQLite backend
    ├─ index.js               routes, auth middleware, static frontend serving
    ├─ auth.js                shared-password HTTP Basic Auth
@@ -174,12 +223,16 @@ portfolio-demo/
    │  └─ twelvedata.js        Twelve Data /quote fetch
    ├─ ai.js                  server-side Claude API call for the AI box
    ├─ email.js               builds today's workbook + sends it via Resend
-   ├─ orders.js              pricing math + Excel workbook generation
-                              (separate equity/bond sheet blocks)
+   ├─ orders.js              pricing math (buy AND sell) + Excel workbook
+                              generation (separate equity/bond sheet blocks)
    ├─ db.js                  SQLite schema + queries (Node's built-in node:sqlite —
                               deliberately not better-sqlite3, which needs a C++
-                              compiler to install and fails on machines without one;
-                              buy_lists rows are tagged asset_class 'equity'/'bond')
+                              compiler to install and fails on machines without one).
+                              Two tables: `buy_lists` (every buy/sell submitted,
+                              tagged asset_class 'equity'/'bond' and side 'buy'/'sell')
+                              and `portfolios` (ties one equity buy + one bond buy
+                              together with the RPQ's target split and each leg's
+                              sell status — see "The guided flow" above)
    ├─ test-local.mjs         exercises db/orders logic with fake quotes,
                               no network needed
    └─ test-quotes-local.mjs  exercises quotes.js's provider fallback/caching/
@@ -198,20 +251,32 @@ portfolio-demo/
   → persists an already-priced-and-sized bond buy list (pricing/sizing
   happens client-side in `BondPortfolioBuilder.jsx`, since bond prices are
   static data, not a live quote); returns it.
+- `POST /api/portfolios` — `{ rpqEquityPct, rpqFiPct, equityBuyListId }` →
+  creates a portfolio record (server-generated UUID), called once the Equity
+  leg's buy is saved. Returns `{ id }`.
+- `PATCH /api/portfolios/:id` — `{ bondBuyListId }` → attaches the Fixed
+  Income leg once its buy is saved.
+- `GET /api/portfolios/:id` — the Dashboard's one fetch: portfolio metadata
+  (RPQ target, sold status per leg) plus both legs' full buy (and, once
+  sold, sell) records, holdings included.
+- `POST /api/portfolios/:id/sell` — `{ side: 'equity' | 'bond' | 'all' }` →
+  sells one or both legs (see "Selling" above); returns the resulting sell
+  record(s).
 - `POST /api/daily-orders/email-report` — builds today's combined-order
-  workbook (equity + bond sheets) and emails it to `DAILY_REPORT_EMAIL` (or
-  the `jake.vendrell@titanwh.com` default) via Resend. Meant to be called by
-  the GitHub Actions cron job, not a person — see "Hosting it".
+  workbook (equity + bond sheets, buys and sells) and emails it to
+  `DAILY_REPORT_EMAIL` (or the `jake.vendrell@titanwh.com` default) via
+  Resend. Meant to be called by the GitHub Actions cron job, not a person —
+  see "Hosting it".
 - `GET /api/daily-orders/summary?date=YYYY-MM-DD` and
   `GET /api/daily-orders?date=YYYY-MM-DD` — JSON summary (with separate
-  equity/bond totals) / `.xlsx` download for a given day. Not linked from the
-  UI anymore (the email is the intended delivery path); kept as a manual
-  fallback you can hit directly if needed.
+  buy/sell, equity/bond totals) / `.xlsx` download for a given day. Not
+  linked from the UI anymore (the email is the intended delivery path);
+  kept as a manual fallback you can hit directly if needed.
 - `POST /api/quotes` — `{ holdings: [{ticker, exch}, ...] }` → raw quotes, no
   persistence. Not currently called by the frontend; kept for debugging.
 - `POST /api/ai/portfolio-config` — `{ prompt, sectors, regions }` → the AI
   box's filter config, via a server-side Claude API call. Equity only — the
-  Fixed Income tab has no AI box.
+  Fixed Income step has no AI box.
 
 Storage is a single SQLite file at `server/data/buylist.db` (gitignored,
 created automatically on first run). Fine for a demo/single-instance

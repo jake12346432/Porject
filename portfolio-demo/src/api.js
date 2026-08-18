@@ -46,4 +46,43 @@ export async function getAIPortfolioConfig({ prompt, sectors, regions }) {
   return body.config;
 }
 
+// ============ Guided-flow portfolios (RPQ -> Equity -> Fixed Income -> Dashboard) ============
+
+// Creates the portfolio record once the equity leg's buy is saved — returns { id }, which the
+// browser keeps (localStorage) as the only way back to this portfolio's dashboard.
+export async function createPortfolio({ rpqEquityPct, rpqFiPct, equityBuyListId }) {
+  const resp = await fetch(`${API_BASE}/api/portfolios`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rpqEquityPct, rpqFiPct, equityBuyListId }),
+  });
+  return asJson(resp);
+}
+
+// Attaches the bond leg once the Fixed Income step's buy is saved.
+export async function attachBondLeg(portfolioId, bondBuyListId) {
+  const resp = await fetch(`${API_BASE}/api/portfolios/${portfolioId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ bondBuyListId }),
+  });
+  return asJson(resp);
+}
+
+// The dashboard's one fetch — portfolio metadata plus both legs' full buy/sell records.
+export async function getPortfolio(portfolioId) {
+  const resp = await fetch(`${API_BASE}/api/portfolios/${portfolioId}`);
+  return asJson(resp);
+}
+
+// side: 'equity' | 'bond' | 'all'.
+export async function sellPortfolioLeg(portfolioId, side) {
+  const resp = await fetch(`${API_BASE}/api/portfolios/${portfolioId}/sell`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ side }),
+  });
+  return asJson(resp);
+}
+
 export { API_BASE };

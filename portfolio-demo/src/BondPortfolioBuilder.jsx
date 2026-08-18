@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { BONDS, REGIONS, SECTORS, YTM_MIN, YTM_MAX, DURATION_MIN, DURATION_MAX } from "./bondData.js";
 import { submitBondBuy } from "./api.js";
+import { FlowBreadcrumb } from "./shared.jsx";
 
 // REGIONS/SECTORS from bondData.js span the full dataset, including government-only categories
 // (e.g. "Emerging Markets" has no Corporate bonds at all; "Sovereign"/"Treasury"/"Agency"/"MBS
@@ -411,26 +412,11 @@ function AllocBarChart({ data, t, color }) {
   );
 }
 
-// Segmented Equity / Fixed Income switcher, sitting where a static screen-name label used to be
-// in the nav — shared visual language with other pill toggles. Equity is first/leftmost, matching
-// the tab order in App.jsx (equity is the default/primary product, fixed income the newer add-on).
-function TabSwitcher({ activeTab, onSwitchTab, t }) {
-  return (
-    <div style={{ display: "flex", background: t.surface2, borderRadius: 8, padding: 3, border: `1px solid ${t.borderMuted}` }}>
-      {[["equity", "Equity"], ["fixedIncome", "Fixed Income"]].map(([key, label]) => (
-        <button key={key} onClick={() => onSwitchTab(key)} style={{
-          padding: "6px 14px", borderRadius: 6, border: "none",
-          background: activeTab === key ? t.accent : "transparent", color: activeTab === key ? "#FFFFFF" : t.muted,
-          fontSize: 12.5, fontWeight: activeTab === key ? 700 : 500, fontFamily: "'Inter', sans-serif", cursor: "pointer",
-          whiteSpace: "nowrap", transition: "all 0.15s",
-        }}>{label}</button>
-      ))}
-    </div>
-  );
-}
-
 /* ============================== MAIN ============================== */
-export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwitchTab }) {
+// `rpq` and `onBuyComplete` are set by the guided flow (RPQ -> Equity -> Fixed Income ->
+// Dashboard), which is now the only way this component is rendered — see PortfolioBuilder.jsx
+// for the same pattern on the equity side.
+export default function BondPortfolioBuilder({ theme, setTheme, rpq, onBuyComplete }) {
   const t = THEMES[theme];
 
   const [regionFilter, setRegionFilter] = useState(new Set(CORPORATE_REGIONS));
@@ -625,7 +611,7 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
           <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 500, color: t.muted }}>Wealth</span>
         </div>
         <div style={{ width: 1, height: 22, background: t.gridLine, margin: "0 4px" }} />
-        <TabSwitcher t={t} activeTab={activeTab} onSwitchTab={onSwitchTab} />
+        <FlowBreadcrumb t={t} step="fi" />
 
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 16 }}>
           <button
@@ -655,6 +641,15 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
       </div>
 
       <div style={{ maxWidth: 1160, margin: "0 auto", padding: "40px 28px 80px" }}>
+
+        {rpq && (
+          <div style={{
+            textAlign: "center", marginBottom: 20, padding: "10px 16px", borderRadius: 10,
+            background: t.surface2, border: `1px solid ${t.borderMuted}`, fontSize: 13, color: t.textSecondary,
+          }}>
+            Your target allocation: {rpq.equityPct}% Equity / <strong style={{ color: t.textStrong }}>{rpq.fiPct}% Fixed Income</strong> — the Equity portion is already saved. Build this portion now.
+          </div>
+        )}
 
         {/* ============ HERO ============ */}
         <div style={{
@@ -953,6 +948,28 @@ export default function BondPortfolioBuilder({ theme, setTheme, activeTab, onSwi
                   Allocated £{lockedPortfolio.totalAllocated.toFixed(2)} of £{lockedPortfolio.poundAmount.toFixed(2)} (£{lockedPortfolio.cash.toFixed(2)} unallocated).
                   This is an order ticket for your own records, not an executed trade.
                 </div>
+                {onBuyComplete && (
+                  <button
+                    onClick={() => onBuyComplete({
+                      buyListId: lockedPortfolio.id,
+                      portfolioName: buyName.trim() || "Untitled bond portfolio",
+                      poundAmount: lockedPortfolio.poundAmount,
+                      totalAllocated: lockedPortfolio.totalAllocated,
+                      cash: lockedPortfolio.cash,
+                      holdings: lockedPortfolio.holdings,
+                    })}
+                    className="tw-btn-primary"
+                    style={{
+                      marginTop: 16, width: "100%", padding: "14px 26px", borderRadius: 99,
+                      border: `1px solid ${t.borderStrong}`,
+                      background: `linear-gradient(135deg, ${t.lavender}, ${t.accent})`, color: "#FFFFFF",
+                      fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "'Inter', sans-serif",
+                      letterSpacing: "0.06em", textTransform: "uppercase",
+                    }}
+                  >
+                    Continue to Dashboard →
+                  </button>
+                )}
               </div>
             )}
 

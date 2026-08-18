@@ -26,24 +26,37 @@ export async function sendDailyOrderReport() {
     return { sent: false, reason: `No buy lists submitted for ${tradeDate} — nothing to send.`, tradeDate };
   }
 
-  const equity = buyLists.filter(bl => bl.assetClass !== "bond");
-  const bonds = buyLists.filter(bl => bl.assetClass === "bond");
+  const equityBuys = buyLists.filter(bl => bl.assetClass !== "bond" && bl.side !== "sell");
+  const equitySells = buyLists.filter(bl => bl.assetClass !== "bond" && bl.side === "sell");
+  const bondBuys = buyLists.filter(bl => bl.assetClass === "bond" && bl.side !== "sell");
+  const bondSells = buyLists.filter(bl => bl.assetClass === "bond" && bl.side === "sell");
   const buffer = buildDailyWorkbook(buyLists, tradeDate);
-  const totalDollars = equity.reduce((a, b) => a + b.dollarAmount, 0);
-  const totalPounds = bonds.reduce((a, b) => a + b.dollarAmount, 0);
+  // Buy and sell dollar amounts are opposite-direction cash flows — summing them into one figure
+  // would understate/overstate activity, so buys and sells are reported (and totaled) separately.
+  const totalBuyDollars = equityBuys.reduce((a, b) => a + b.dollarAmount, 0);
+  const totalSellDollars = equitySells.reduce((a, b) => a + b.dollarAmount, 0);
+  const totalBuyPounds = bondBuys.reduce((a, b) => a + b.dollarAmount, 0);
+  const totalSellPounds = bondSells.reduce((a, b) => a + b.dollarAmount, 0);
 
   const parts = [];
-  if (equity.length) parts.push(`${equity.length} equity portfolio(s) totaling $${totalDollars.toLocaleString()}`);
-  if (bonds.length) parts.push(`${bonds.length} bond portfolio(s) totaling £${totalPounds.toLocaleString()}`);
+  if (equityBuys.length) parts.push(`${equityBuys.length} equity buy(s) totaling $${totalBuyDollars.toLocaleString()}`);
+  if (equitySells.length) parts.push(`${equitySells.length} equity sell(s) totaling $${totalSellDollars.toLocaleString()}`);
+  if (bondBuys.length) parts.push(`${bondBuys.length} bond buy(s) totaling £${totalBuyPounds.toLocaleString()}`);
+  if (bondSells.length) parts.push(`${bondSells.length} bond sell(s) totaling £${totalSellPounds.toLocaleString()}`);
 
   await sendEmailWithAttachment({
     to,
     subject: `Titan Wealth — combined order book for ${tradeDate}`,
-    text: `${parts.join(" and ")} submitted today. Combined order sheet attached — separate Bulk Order / Allocations / Portfolios sheets per asset class, ready for the next market open.`,
+    text: `${parts.join(", ")} submitted today. Combined order sheet attached — separate Bulk Order / Allocations / Portfolios sheets per asset class, buys and sells listed separately, ready for the next market open.`,
     filename: `combined_order_${tradeDate}.xlsx`,
     buffer,
     contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
 
-  return { sent: true, tradeDate, count: buyLists.length, equityCount: equity.length, bondCount: bonds.length, totalDollars, totalPounds };
+  return {
+    sent: true, tradeDate, count: buyLists.length,
+    equityBuyCount: equityBuys.length, equitySellCount: equitySells.length,
+    bondBuyCount: bondBuys.length, bondSellCount: bondSells.length,
+    totalBuyDollars, totalSellDollars, totalBuyPounds, totalSellPounds,
+  };
 }

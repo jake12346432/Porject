@@ -26,6 +26,9 @@ function sheetFrom(rows) {
  * Turns a portfolio's target holdings + weights into a priced, sized buy list.
  * Only holdings with an available quote are included; weights are renormalized
  * among just the quoted subset (mirrors the original client-side lockPortfolio logic).
+ * `exch` is carried through onto every priced holding (not just used to look up the quote) so a
+ * later sell — which needs to requote the same tickers — has what it needs without asking the
+ * client to remember exchange codes for a portfolio bought days ago.
  */
 export function buildBuyList({ portfolioName, dollarAmount, holdings }, quotes) {
   const withPrice = holdings.filter(h => quotes[h.ticker]);
@@ -39,6 +42,7 @@ export function buildBuyList({ portfolioName, dollarAmount, holdings }, quotes) 
     const amount = w * dollarAmount;
     return {
       ticker: h.ticker,
+      exch: h.exch,
       name: h.name,
       sector: h.sector || "",
       country: h.country || "",
@@ -64,13 +68,55 @@ export function buildBuyList({ portfolioName, dollarAmount, holdings }, quotes) 
 }
 
 /**
- * Combines every buy list submitted for a given trade date into one workbook, one set of sheets
- * per asset class actually submitted that day (equity uses tickers/shares/dollars; bonds use
- * ISIN/coupon/maturity/YTM/duration and pounds — different enough fields that forcing them into
- * one shared sheet shape would lose information, so each class gets its own three-sheet block):
- *  - "Bulk Order": one row per instrument, net amount summed across ALL portfolios submitted
- *    that day for that asset class — this is what actually gets placed as a single order at the
- *    next market open.
+ * Liquidates an existing equity holding set at current prices — the sell-side mirror of
+ * buildBuyList. There's no "target amount" here (selling isn't sized against a goal, it's sizing
+ * against what's actually held), so dollarAmount/totalAllocated end up equal and cash is always 0.
+ */
+export function buildSellList({ portfolioName, holdings }, quotes) {
+  const withPrice = holdings.filter(h => quotes[h.ticker]);
+  if (withPrice.length === 0) {
+    return { error: "No live prices available to sell any holding in this portfolio." };
+  }
+  const priced = withPrice.map(h => {
+    const { price, currency, asOf } = quotes[h.ticker];
+    return {
+      ticker: h.ticker,
+      exch: h.exch,
+      name: h.name,
+      sector: h.sector || "",
+      country: h.country || "",
+      price,
+      currency,
+      asOf,
+      shares: h.shares,
+      amount: h.shares * price,
+    };
+  });
+  const totalAllocated = priced.reduce((a, h) => a + h.amount, 0);
+  priced.forEach(h => { h.weight = totalAllocated > 0 ? (h.amount / totalAllocated) * 100 : 0; });
+  const skipped = holdings.length - withPrice.length;
+
+  return {
+    portfolioName,
+    dollarAmount: totalAllocated,
+    holdings: priced,
+    totalAllocated,
+    cash: 0,
+    skippedCount: skipped,
+  };
+}
+
+/**
+ * Combines every buy/sell list submitted for a given trade date into one workbook, one set of
+ * sheets per asset class actually submitted that day (equity uses tickers/shares/dollars; bonds
+ * use ISIN/coupon/maturity/YTM/duration and pounds — different enough fields that forcing them
+ * into one shared sheet shape would lose information, so each class gets its own three-sheet
+ * block):
+ *  - "Bulk Order": one row per (instrument, side), net amount summed across ALL portfolios
+ *    submitted that day for that asset class and side — this is what actually gets placed as
+ *    orders at the next market open. Buys and sells are listed separately, not netted against
+ *    each other, so a buy and a sell of the same instrument on the same day both show up rather
+ *    than silently cancelling out.
  *  - "Allocations": one row per (portfolio, instrument) so the position can be handed back out to
  *    the originating portfolio after the bulk order fills.
  *  - "Portfolios": one row per submitted portfolio in that asset class, for a quick daily summary.
@@ -86,14 +132,19 @@ export function buildDailyWorkbook(buyLists, tradeDate) {
   return XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
 }
 
+function sideLabel(side) {
+  return side === "sell" ? "Sell" : "Buy";
+}
+
 function appendEquitySheets(wb, buyLists) {
-  const byTicker = new Map();
+  const byTickerSide = new Map();
   const allocations = [];
   const portfolioRows = [];
 
   for (const bl of buyLists) {
     portfolioRows.push({
       "Portfolio": bl.portfolioName,
+      "Side": sideLabel(bl.side),
       "Submitted At": bl.createdAt,
       "Target $": round2(bl.dollarAmount),
       "Allocated $": round2(bl.totalAllocated),
@@ -104,6 +155,7 @@ function appendEquitySheets(wb, buyLists) {
     for (const h of bl.holdings) {
       allocations.push({
         "Portfolio": bl.portfolioName,
+        "Side": sideLabel(bl.side),
         "Ticker": h.ticker,
         "Company": h.name,
         "Shares": round4(h.shares),
@@ -112,21 +164,23 @@ function appendEquitySheets(wb, buyLists) {
         "Weight %": round2(h.weight),
       });
 
-      const existing = byTicker.get(h.ticker) || {
-        ticker: h.ticker, name: h.name, shares: 0, amount: 0, portfolios: new Set(), price: h.price,
+      const key = `${h.ticker}|${bl.side}`;
+      const existing = byTickerSide.get(key) || {
+        ticker: h.ticker, side: bl.side, name: h.name, shares: 0, amount: 0, portfolios: new Set(), price: h.price,
       };
       existing.shares += h.shares;
       existing.amount += h.amount;
       existing.portfolios.add(bl.portfolioName);
       existing.price = h.price; // most recent price wins
-      byTicker.set(h.ticker, existing);
+      byTickerSide.set(key, existing);
     }
   }
 
-  const bulkRows = [...byTicker.values()]
+  const bulkRows = [...byTickerSide.values()]
     .sort((a, b) => b.amount - a.amount)
     .map(t => ({
       "Ticker": t.ticker,
+      "Side": sideLabel(t.side),
       "Company": t.name,
       "Total Shares": round4(t.shares),
       "Whole Shares (round down)": Math.floor(t.shares),
@@ -141,13 +195,14 @@ function appendEquitySheets(wb, buyLists) {
 }
 
 function appendBondSheets(wb, buyLists) {
-  const byIsin = new Map();
+  const byIsinSide = new Map();
   const allocations = [];
   const portfolioRows = [];
 
   for (const bl of buyLists) {
     portfolioRows.push({
       "Portfolio": bl.portfolioName,
+      "Side": sideLabel(bl.side),
       "Submitted At": bl.createdAt,
       "Target £": round2(bl.dollarAmount),
       "Allocated £": round2(bl.totalAllocated),
@@ -158,6 +213,7 @@ function appendBondSheets(wb, buyLists) {
     for (const h of bl.holdings) {
       allocations.push({
         "Portfolio": bl.portfolioName,
+        "Side": sideLabel(bl.side),
         "Instrument": h.name,
         "ISIN": h.isin,
         "Region": h.region,
@@ -171,21 +227,23 @@ function appendBondSheets(wb, buyLists) {
         "Weight %": round2(h.weight),
       });
 
-      const existing = byIsin.get(h.isin) || {
-        isin: h.isin, name: h.name, amount: 0, portfolios: new Set(), price: h.price,
+      const key = `${h.isin}|${bl.side}`;
+      const existing = byIsinSide.get(key) || {
+        isin: h.isin, side: bl.side, name: h.name, amount: 0, portfolios: new Set(), price: h.price,
       };
       existing.amount += h.amount;
       existing.portfolios.add(bl.portfolioName);
       existing.price = h.price; // most recent price wins
-      byIsin.set(h.isin, existing);
+      byIsinSide.set(key, existing);
     }
   }
 
-  const bulkRows = [...byIsin.values()]
+  const bulkRows = [...byIsinSide.values()]
     .sort((a, b) => b.amount - a.amount)
     .map(b => ({
       "Instrument": b.name,
       "ISIN": b.isin,
+      "Side": sideLabel(b.side),
       "Latest Price": b.price != null ? round2(b.price) : "",
       "Total Amount £": round2(b.amount),
       "# Portfolios": b.portfolios.size,
