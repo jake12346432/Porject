@@ -275,8 +275,8 @@ function DashboardHub({ t, portfolios, incomplete, onSelect, onResumeFi, onMakeA
         <div style={{ display: "flex", gap: 14, marginBottom: 20, flexWrap: "wrap" }}>
           <StatTile t={t} label="Equity invested" value={`$${totalEquityInvested.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} sub={`${complete.length} of ${portfolios.length} portfolios`} />
           <StatTile t={t} label="Fixed Income invested" value={`£${totalFiInvested.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} sub={`${complete.length} of ${portfolios.length} portfolios`} />
-          <StatTile t={t} label="Equity cash" value={`$${totalEquityCash.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} sub="1.75% policy sleeve" />
-          <StatTile t={t} label="Fixed Income cash" value={`£${totalFiCash.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} sub="1.75% policy sleeve" />
+          <StatTile t={t} label="Cash" value={`$${totalEquityCash.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} sub="1.75% policy sleeve" />
+          <StatTile t={t} label="Cash" value={`£${totalFiCash.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} sub="1.75% policy sleeve" />
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
@@ -379,8 +379,8 @@ function PortfolioDetail({ t, portfolio, selling, sellError, onSell, onBack }) {
         <div style={{ display: "flex", gap: 14, marginTop: 16, flexWrap: "wrap" }}>
           <StatTile t={t} label="Equity invested" value={equity ? `$${equity.totalAllocated.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—"} sub={equity ? `${equity.holdings.length} holdings` : "Not built yet"} />
           <StatTile t={t} label="Fixed Income invested" value={bond ? `£${bond.totalAllocated.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—"} sub={bond ? `${bond.holdings.length} holdings` : "Not built yet"} />
-          <StatTile t={t} label="Equity cash" value={equity ? `$${equity.cash.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—"} sub="1.75% policy sleeve" />
-          <StatTile t={t} label="Fixed Income cash" value={bond ? `£${bond.cash.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—"} sub="1.75% policy sleeve" />
+          <StatTile t={t} label="Cash" value={equity ? `$${equity.cash.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—"} sub="1.75% policy sleeve" />
+          <StatTile t={t} label="Cash" value={bond ? `£${bond.cash.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—"} sub="1.75% policy sleeve" />
         </div>
       </SectionCard>
 
