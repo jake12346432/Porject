@@ -7,19 +7,28 @@ day into one bulk order sheet for the next market open.
 
 ## The guided flow
 
-The site is one linear flow, not a pair of free-standing tabs — there's no
-way to jump straight to Equity or Fixed Income; you go through in order:
+Building one portfolio is a linear sequence — there's no way to jump
+straight to Equity or Fixed Income — but the **Dashboard is a persistent
+hub, not the flow's endpoint**: once you've built one portfolio, "Make new/
+additional portfolio" re-enters the same sequence to build a separate,
+independently named one, without discarding the ones already built. A
+client can end up with any number of named portfolios, each with its own
+Equity + Fixed Income pair.
 
 1. **Risk profile** (`src/RiskQuestionnaire.jsx`) — a mock RPQ (risk profile
    questionnaire). The real thing would score a series of questions about
    time horizon, loss tolerance, etc.; this stands in for that scoring model
-   with a direct pick of the target split (a slider + a few presets), since
-   the real model isn't built yet. Produces an Equity % / Fixed Income %
-   target, same shape a real RPQ would hand off.
+   with a direct pick, since the real model isn't built yet. Asks **how much
+   you're investing** (a single $ figure) and the **Equity / Fixed Income
+   split** you're targeting (a slider + a few presets) — the split is then
+   applied to the cash figure automatically, so the next two steps' target
+   amounts are pre-filled rather than asked for again. A **1.75% cash sleeve**
+   (`CASH_ALLOCATION_PCT`, fixed policy, not affected by the split) is called
+   out here and held back from both legs — see "Cash allocation" below.
 2. **Equity** (`src/PortfolioBuilder.jsx`) — the stock screener described
    below (live pricing, the AI "describe what you want" box, templates,
-   build-your-own filters). Ends with **Buy portfolio**, then **Continue to
-   Fixed Income →**.
+   build-your-own filters), its order-value field pre-filled from step 1.
+   Ends with **Buy portfolio**, then **Continue to Fixed Income →**.
 3. **Fixed Income** (`src/BondPortfolioBuilder.jsx` + `src/bondData.js`) — a
    bond portfolio builder, ultimately meant to be GBP-corporate-only, but
    that lock is **temporarily switched off** — the placeholder universe (184
@@ -32,27 +41,56 @@ way to jump straight to Equity or Fixed Income; you go through in order:
    hard filters (region, sector, credit rating, YTM range, duration range —
    no soft/preference tilts). Bonds are priced from the static `price` field
    already in `bondData.js` (no live quote fetch needed — there's no feed
-   for bonds). Ends with **Buy portfolio**, then **Continue to Dashboard →**.
-4. **Dashboard** (`src/Dashboard.jsx`) — shows the whole portfolio: the
-   target split from step 1 as a chart, a stat tile per leg (equity
-   invested in $, fixed income invested in £ — shown separately since
-   blending USD and GBP into one figure would need a live FX rate this demo
-   doesn't have), each leg's region/sector allocation charts and top 10
-   holdings, and **Sell** buttons (Equity only / Fixed Income only / entire
-   portfolio) that liquidate the corresponding leg — see "Selling" below.
+   for bonds), its order-value field also pre-filled from step 1. Ends with
+   **Buy portfolio**, then **Continue to Dashboard →**.
+4. **Dashboard** (`src/Dashboard.jsx`) has two views:
+   - **Hub** (default) — an "Entire portfolio" section blending every
+     portfolio's Equity legs and every portfolio's Fixed Income legs
+     separately (dollar-weighted within each currency — see "Currency
+     handling" below), with full, non-truncated region/sector breakdowns
+     (not just a top-N chart) and cash-allocation stat tiles; then a card
+     per portfolio (name, target split, invested amounts, sold status) —
+     click a card to open it.
+   - **Detail** (one portfolio) — the target split as a chart, a stat tile
+     per leg (invested amount + cash held back), each leg's region/sector
+     allocation charts and top 10 holdings (amount only — weights aren't
+     shown here, unlike the builder steps' own holdings tables), and **Sell**
+     buttons (Equity only / Fixed Income only / entire portfolio) — see
+     "Selling" below for what these actually do.
 
-There's no login system, so "your portfolio" persistence is just a
-server-generated id the browser keeps in `localStorage`
-(`src/App.jsx` — the flow's orchestrator) — reopening the site with that id
-saved resumes straight at the Dashboard, or (if only the Equity leg was
-finished) offers to pick up Fixed Income where you left off. There's no
-cross-device access and nothing tied to a real account; clearing the
-browser's storage (or hitting "Start a new portfolio" on the Dashboard)
-starts a fresh one.
+There's no login system, so "your portfolios" persistence is just the list
+of server-generated ids the browser keeps in `localStorage`
+(`src/App.jsx` — the flow's orchestrator) — reopening the site with that
+list saved resumes straight at the Dashboard hub, or (if a portfolio's
+Fixed Income leg was left unfinished) offers to pick up where you left off.
+There's no cross-device access and nothing tied to a real account; clearing
+the browser's storage (or the de-emphasized "Clear everything and start
+over" link on the Dashboard) wipes every known portfolio and starts fresh.
 
 Both builder steps share the same light/dark theme toggle and visual
 language (`src/shared.jsx` holds the palette and chart components common to
 the flow-level screens).
+
+### Cash allocation
+
+A fixed 1.75% cash sleeve (`CASH_ALLOCATION_PCT`, duplicated as a constant
+in `RiskQuestionnaire.jsx`, `PortfolioBuilder.jsx`, and
+`BondPortfolioBuilder.jsx`) is held back from **both** legs on every buy —
+this is baked-in policy, unrelated to the RPQ's target split, and was true
+for Equity before Fixed Income gained the same treatment. Each leg's actual
+invested amount is `target × (1 - 1.75%)`; the resulting cash is stored on
+that leg's `buy_lists` row (`cash`) and surfaced on the Dashboard as its own
+stat tile, both per-portfolio and summed across all portfolios on the hub.
+
+### Currency handling
+
+Equity is always priced in USD and Fixed Income in GBP, and this app never
+converts between them (no FX rate source). Every place multiple portfolios
+or legs are blended together — the Dashboard hub's aggregate stats and full
+region/sector breakdowns — blends *within* one currency only (all Equity
+legs together, all Fixed Income legs together, each dollar/pound-weighted
+by that leg's own invested amount), never combining the two. This is called
+out explicitly in the hub's "Entire portfolio" section.
 
 ### Selling
 
@@ -235,8 +273,8 @@ portfolio-demo/
                               Two tables: `buy_lists` (every buy/sell submitted,
                               tagged asset_class 'equity'/'bond' and side 'buy'/'sell')
                               and `portfolios` (ties one equity buy + one bond buy
-                              together with the RPQ's target split and each leg's
-                              sell status — see "The guided flow" above)
+                              together with a name, the RPQ's target split, and each
+                              leg's sell status — see "The guided flow" above)
    ├─ test-local.mjs         exercises db/orders logic with fake quotes,
                               no network needed
    └─ test-quotes-local.mjs  exercises quotes.js's provider fallback/caching/
@@ -255,9 +293,12 @@ portfolio-demo/
   → persists an already-priced-and-sized bond buy list (pricing/sizing
   happens client-side in `BondPortfolioBuilder.jsx`, since bond prices are
   static data, not a live quote); returns it.
-- `POST /api/portfolios` — `{ rpqEquityPct, rpqFiPct, equityBuyListId }` →
-  creates a portfolio record (server-generated UUID), called once the Equity
-  leg's buy is saved. Returns `{ id }`.
+- `POST /api/portfolios` — `{ name, rpqEquityPct, rpqFiPct, equityBuyListId }`
+  → creates a portfolio record (server-generated UUID), called once the
+  Equity leg's buy is saved. `name` is chosen client-side (e.g. "Portfolio
+  2", counting up from how many portfolios this browser already knows
+  about) so multiple portfolios are distinguishable on the Dashboard.
+  Returns `{ id }`.
 - `PATCH /api/portfolios/:id` — `{ bondBuyListId }` → attaches the Fixed
   Income leg once its buy is saved.
 - `GET /api/portfolios/:id` — the Dashboard's one fetch: portfolio metadata

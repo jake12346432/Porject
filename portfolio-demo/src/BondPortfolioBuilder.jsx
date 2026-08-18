@@ -84,6 +84,12 @@ const TEMPLATES = [
   },
 ];
 
+// Fixed cash sleeve, same figure and same rationale as the equity builder's CASH_ALLOCATION_PCT —
+// a deliberate policy held back from every buy regardless of the RPQ's target split, not something
+// derived from it. Duplicated here (rather than imported) matching this file's existing pattern of
+// keeping its own copy of constants also defined in PortfolioBuilder.jsx.
+const CASH_ALLOCATION_PCT = 1.75;
+
 /* ============================== HELPERS ============================== */
 // The hard-filter predicate, shared by the engine and the live "N bonds eligible" preview so they
 // always agree on what would pass. The Corporate-only and GBP-only locks are OFF for now — the
@@ -425,7 +431,7 @@ export default function BondPortfolioBuilder({ theme, setTheme, rpq, onBuyComple
   const [isStale, setIsStale] = useState(false);
   const resultsRef = useRef(null);
 
-  const [poundAmount, setPoundAmount] = useState(10000);
+  const [poundAmount, setPoundAmount] = useState(rpq?.fiAmount ?? 10000);
   const [buyName, setBuyName] = useState("");
   const [buyNameTouched, setBuyNameTouched] = useState(false);
   const [buyLoading, setBuyLoading] = useState(false);
@@ -513,13 +519,18 @@ export default function BondPortfolioBuilder({ theme, setTheme, rpq, onBuyComple
     try {
       const priced = portfolio.selected.filter(b => b.price != null);
       if (priced.length === 0) throw new Error("None of the selected bonds have a price available to size an order against.");
+      // Only invest (100 - CASH_ALLOCATION_PCT)% of the target — the rest is a deliberate cash
+      // sleeve, same policy as the equity builder. Weights among holdings are unchanged (still sum
+      // to 100% of the bond portion); the cash held back is against the FULL poundAmount, not the
+      // reduced invested amount.
+      const investAmount = poundAmount * (1 - CASH_ALLOCATION_PCT / 100);
       const wSum = priced.reduce((a, b) => a + b.weight, 0) || 1;
       const holdings = priced.map(b => {
         const w = b.weight / wSum;
         return {
           isin: b.isin, name: b.name, region: b.region, sector: b.sector,
           coupon: b.coupon, maturity: b.maturity, ytm: b.ytm, duration: b.duration,
-          price: b.price, weight: w * 100, amount: w * poundAmount,
+          price: b.price, weight: w * 100, amount: w * investAmount,
         };
       });
       const totalAllocated = holdings.reduce((a, h) => a + h.amount, 0);

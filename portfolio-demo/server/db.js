@@ -32,6 +32,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS portfolios (
     id TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT 'Portfolio',
     rpq_equity_pct REAL NOT NULL,
     rpq_fi_pct REAL NOT NULL,
     equity_buy_list_id INTEGER,
@@ -47,6 +48,7 @@ db.exec(`
 // a single-table demo app.
 try { db.exec(`ALTER TABLE buy_lists ADD COLUMN asset_class TEXT NOT NULL DEFAULT 'equity'`); } catch { /* already migrated */ }
 try { db.exec(`ALTER TABLE buy_lists ADD COLUMN side TEXT NOT NULL DEFAULT 'buy'`); } catch { /* already migrated */ }
+try { db.exec(`ALTER TABLE portfolios ADD COLUMN name TEXT NOT NULL DEFAULT 'Portfolio'`); } catch { /* already migrated */ }
 
 // `dollarAmount` holds whatever currency the asset class trades in — dollars for equity,
 // pounds for bonds; the column name predates fixed income and isn't worth a rename/migration.
@@ -105,14 +107,16 @@ export function getBuyListById(id) {
 /**
  * A "portfolio" ties together one equity buy and one bond buy submitted through the guided
  * RPQ → Equity → Fixed Income flow, plus the RPQ's target split and each leg's sell status. There's
- * no login system, so the id (a UUID generated here) is the only key — the browser holds onto it
- * (localStorage) to come back to the same dashboard later. Not tied to any user account.
+ * no login system, so the id (a UUID generated here) is the only key — the browser holds onto the
+ * full list of ids it's created (localStorage) to come back to the same portfolios later. Not tied
+ * to any user account. `name` is chosen client-side (e.g. "Portfolio 2") so multiple portfolios in
+ * the same browser are distinguishable on the Dashboard.
  */
-export function createPortfolio({ id, rpqEquityPct, rpqFiPct, equityBuyListId }) {
+export function createPortfolio({ id, name, rpqEquityPct, rpqFiPct, equityBuyListId }) {
   db.prepare(`
-    INSERT INTO portfolios (id, created_at, rpq_equity_pct, rpq_fi_pct, equity_buy_list_id)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(id, new Date().toISOString(), rpqEquityPct, rpqFiPct, equityBuyListId);
+    INSERT INTO portfolios (id, created_at, name, rpq_equity_pct, rpq_fi_pct, equity_buy_list_id)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(id, new Date().toISOString(), name || "Portfolio", rpqEquityPct, rpqFiPct, equityBuyListId);
 }
 
 export function attachBondBuy(id, bondBuyListId) {
@@ -134,6 +138,7 @@ export function getPortfolioById(id) {
   return {
     id: row.id,
     createdAt: row.created_at,
+    name: row.name,
     rpqEquityPct: row.rpq_equity_pct,
     rpqFiPct: row.rpq_fi_pct,
     equityBuyListId: row.equity_buy_list_id,

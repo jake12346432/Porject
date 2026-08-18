@@ -12,10 +12,19 @@ const PRESETS = [
   { label: "All Equity", equityPct: 100 },
 ];
 
-export default function RiskQuestionnaire({ theme, setTheme, onComplete }) {
+// Same figure and rationale as PortfolioBuilder.jsx/BondPortfolioBuilder.jsx's own copy — shown
+// here just for context on what "target amount" the next two steps will actually invest.
+const CASH_ALLOCATION_PCT = 1.75;
+
+// initialEquityPct/initialCash let "Make new/additional portfolio" (from the Dashboard) pre-fill
+// this screen with the split/amount from the last portfolio, rather than starting blank every time.
+export default function RiskQuestionnaire({ theme, setTheme, onComplete, initialEquityPct = 60, initialCash = 10000 }) {
   const t = THEMES[theme];
-  const [equityPct, setEquityPct] = useState(60);
+  const [equityPct, setEquityPct] = useState(initialEquityPct);
+  const [cash, setCash] = useState(initialCash);
   const fiPct = 100 - equityPct;
+  const equityAmount = Math.round(cash * (equityPct / 100));
+  const fiAmount = cash - equityAmount;
 
   return (
     <div style={{ minHeight: "100vh", background: t.bg, color: t.text, fontFamily: "'IBM Plex Sans', sans-serif" }}>
@@ -62,12 +71,33 @@ export default function RiskQuestionnaire({ theme, setTheme, onComplete }) {
             What's your target allocation?
           </h1>
           <p style={{ fontSize: 14.5, color: t.muted, lineHeight: 1.6, maxWidth: 520, margin: "0 auto" }}>
-            This stands in for a full risk questionnaire — pick the Equity / Fixed Income split
-            you're targeting, then build each portion in turn.
+            This stands in for a full risk questionnaire — pick how much you're investing and the
+            Equity / Fixed Income split you're targeting, and each portion's target amount is set
+            automatically. Build each portion in turn.
           </p>
         </div>
 
         <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 16, padding: "28px 30px" }}>
+          <div style={{ marginBottom: 26 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: t.textSecondary, marginBottom: 8 }}>How much are you investing?</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 15, color: t.faint }}>$</span>
+              <input
+                type="number" min={0} value={cash}
+                onChange={e => setCash(Math.max(0, parseFloat(e.target.value) || 0))}
+                style={{
+                  flex: 1, background: t.surface2, color: t.text, border: `1px solid ${t.borderStrong}`,
+                  borderRadius: 8, padding: "10px 12px", fontFamily: "'IBM Plex Mono', monospace", fontSize: 15,
+                }}
+              />
+            </div>
+            <div style={{ fontSize: 11.5, color: t.faint, marginTop: 6 }}>
+              Split proportionally into an Equity target and a Fixed Income target below — no
+              currency conversion is applied, so treat the Fixed Income figure as a target amount,
+              not a guaranteed £ price (see its in-app disclosure).
+            </div>
+          </div>
+
           <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: 30, flexWrap: "wrap" }}>
             {PRESETS.map(p => (
               <button key={p.label} onClick={() => setEquityPct(p.equityPct)} style={{
@@ -96,22 +126,30 @@ export default function RiskQuestionnaire({ theme, setTheme, onComplete }) {
             <div style={{ flex: 1, textAlign: "center", padding: "20px 14px", borderRadius: 12, background: t.surface2, border: `1px solid ${t.borderMuted}` }}>
               <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: t.muted, marginBottom: 6 }}>Equity</div>
               <div style={{ fontSize: 30, fontWeight: 800, color: t.accentText, fontFamily: "'Inter', sans-serif" }}>{equityPct}%</div>
+              <div style={{ fontSize: 13, color: t.faint, marginTop: 2, fontFamily: "'IBM Plex Mono', monospace" }}>${equityAmount.toLocaleString()}</div>
             </div>
             <div style={{ flex: 1, textAlign: "center", padding: "20px 14px", borderRadius: 12, background: t.surface2, border: `1px solid ${t.borderMuted}` }}>
               <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: t.muted, marginBottom: 6 }}>Fixed Income</div>
               <div style={{ fontSize: 30, fontWeight: 800, color: t.teal, fontFamily: "'Inter', sans-serif" }}>{fiPct}%</div>
+              <div style={{ fontSize: 13, color: t.faint, marginTop: 2, fontFamily: "'IBM Plex Mono', monospace" }}>${fiAmount.toLocaleString()}</div>
             </div>
           </div>
 
+          <div style={{ textAlign: "center", fontSize: 11.5, color: t.faint, marginTop: 14 }}>
+            A {CASH_ALLOCATION_PCT}% cash sleeve is held back from each portion automatically — this
+            is fixed policy, not something the split above changes.
+          </div>
+
           <button
-            onClick={() => onComplete({ equityPct, fiPct })}
+            onClick={() => onComplete({ equityPct, fiPct, cash, equityAmount, fiAmount })}
+            disabled={cash <= 0}
             className="tw-btn-primary"
             style={{
-              marginTop: 26, width: "100%", padding: "16px 26px", borderRadius: 99,
+              marginTop: 18, width: "100%", padding: "16px 26px", borderRadius: 99,
               border: `1px solid ${t.borderStrong}`,
-              background: `linear-gradient(135deg, ${t.lavender}, ${t.accent})`, color: "#FFFFFF",
-              fontSize: 14.5, fontWeight: 800, cursor: "pointer", fontFamily: "'Inter', sans-serif",
-              letterSpacing: "0.08em", textTransform: "uppercase",
+              background: cash <= 0 ? t.borderStrong : `linear-gradient(135deg, ${t.lavender}, ${t.accent})`, color: "#FFFFFF",
+              fontSize: 14.5, fontWeight: 800, cursor: cash <= 0 ? "not-allowed" : "pointer", fontFamily: "'Inter', sans-serif",
+              letterSpacing: "0.08em", textTransform: "uppercase", opacity: cash <= 0 ? 0.6 : 1,
             }}
           >
             Continue to Equity →

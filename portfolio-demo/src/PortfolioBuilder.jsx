@@ -886,7 +886,7 @@ export default function PortfolioBuilder({ theme, setTheme, rpq, onBuyComplete }
   // today's shared order book. Still not a real trade — there is no brokerage
   // connection — but it's a persisted, server-side order ticket now instead of
   // a client-only one.
-  const [portfolioValue, setPortfolioValue] = useState(10000);
+  const [portfolioValue, setPortfolioValue] = useState(rpq?.equityAmount ?? 10000);
   const [buyName, setBuyName] = useState("");
   const [lockedPortfolio, setLockedPortfolio] = useState(null);
   const [buyLoading, setBuyLoading] = useState(false);
@@ -1891,65 +1891,13 @@ ${list}`;
               We build a fully diversified {selected.length}-holding portfolio behind the scenes — the summary above and the ticket below reflect all {selected.length} holdings, we just keep the list you see short and readable.
             </div>
 
-            {/* LIVE DATA & LOCK/BUY */}
+            {/* ORDER TICKET */}
             <div style={{ marginTop: 26 }}>
               <div style={{ fontSize: 11.5, color: t.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
-                Live data & order ticket
+                Order ticket
               </div>
+
               <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: 16 }}>
-                <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.6, marginBottom: 12 }}>
-                  Pulls price, market cap and dividend yield for{" "}
-                  <b style={{ color: t.textSecondary }}>all {selected.length} current holdings</b> via live web search — an
-                  approximate snapshot, not a licensed real-time feed.
-                </div>
-                <button className="tw-btn-primary" onClick={fetchLiveData} disabled={liveLoading || selected.length === 0} style={{
-                  padding: "11px 20px", borderRadius: 99, border: "none", cursor: liveLoading ? "default" : "pointer",
-                  background: liveLoading ? t.borderStrong : `linear-gradient(135deg, ${t.blueAccent}, ${t.accent})`, color: "#FFFFFF", fontWeight: 800, fontSize: 12,
-                  letterSpacing: "0.06em", textTransform: "uppercase",
-                }}>
-                  {liveLoading ? "Fetching live data…" : Object.keys(liveData).length ? "↻ Refresh live data" : "⛁ Fetch live market data"}
-                </button>
-                {liveProgress && (
-                  <div style={{ marginTop: 10 }}>
-                    <div style={{ height: 5, background: t.surfaceAlt, borderRadius: 4, overflow: "hidden", width: 220 }}>
-                      <div style={{ width: `${(liveProgress.done / liveProgress.total) * 100}%`, height: "100%", background: t.blueAccent, borderRadius: 4, transition: "width 0.2s" }} />
-                    </div>
-                    <div style={{ fontSize: 10.5, color: t.faint, marginTop: 4 }}>{liveProgress.done} / {liveProgress.total} holdings fetched</div>
-                  </div>
-                )}
-                {liveFetchedAt && <div style={{ fontSize: 11, color: t.faint, marginTop: 8 }}>Last updated {liveFetchedAt}</div>}
-                {liveError && <div style={{ fontSize: 11.5, color: t.negative, marginTop: 8, lineHeight: 1.5, wordBreak: "break-word" }}>{liveError}</div>}
-
-                {Object.keys(liveData).length > 0 && (
-                  <>
-                    <div style={{ marginTop: 16, borderTop: `1px solid ${t.border}`, paddingTop: 14 }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                        <thead><tr>
-                          {["Ticker", "Live price", "Market cap", "Div. yield", "As of"].map((h, i) => (
-                            <th key={h} style={{ padding: "4px 10px", fontWeight: 500, color: t.muted, fontSize: 10.5, textTransform: "uppercase", textAlign: i > 0 ? "right" : "left" }}>{h}</th>
-                          ))}
-                        </tr></thead>
-                        <tbody>
-                          {selected.map(s => {
-                            const ld = liveData[stockKey(s)];
-                            return (
-                              <tr key={s.exch + s.ticker} style={{ borderTop: `1px solid ${t.surfaceAlt}` }}>
-                                <td style={{ padding: "5px 10px", fontFamily: "'IBM Plex Mono', monospace", color: t.orange }}>{s.ticker}</td>
-                                <td style={{ padding: "5px 10px", textAlign: "right", fontFamily: "'IBM Plex Mono', monospace" }}>{ld && ld.price != null ? `$${ld.price.toFixed(2)}` : "—"}</td>
-                                <td style={{ padding: "5px 10px", textAlign: "right", fontFamily: "'IBM Plex Mono', monospace", color: t.muted }}>{ld && ld.mcap != null ? `$${(ld.mcap / 1e9).toFixed(1)}B` : "—"}</td>
-                                <td style={{ padding: "5px 10px", textAlign: "right", fontFamily: "'IBM Plex Mono', monospace", color: t.muted }}>{ld && ld.divYield != null ? `${ld.divYield.toFixed(2)}%` : "—"}</td>
-                                <td style={{ padding: "5px 10px", textAlign: "right", color: t.faint, fontSize: 11 }}>{ld ? ld.asOf : "—"}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              <div style={{ marginTop: 16, background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: 16 }}>
                 <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.6, marginBottom: 12 }}>
                   Prices <b style={{ color: t.textSecondary }}>all {selected.length} current holdings</b> at current market
                   quotes (delayed ~15 min) and adds the buy list to{" "}

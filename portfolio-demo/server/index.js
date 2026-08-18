@@ -112,14 +112,14 @@ app.post("/api/buy-bonds", (req, res) => {
 
 // Created once the equity leg's buy has been saved (the id it needs already exists by then).
 app.post("/api/portfolios", (req, res) => {
-  const { rpqEquityPct, rpqFiPct, equityBuyListId } = req.body || {};
+  const { name, rpqEquityPct, rpqFiPct, equityBuyListId } = req.body || {};
   if (typeof rpqEquityPct !== "number" || typeof rpqFiPct !== "number" || !equityBuyListId) {
     return res.status(400).json({ error: "Body must include numeric rpqEquityPct, rpqFiPct, and equityBuyListId." });
   }
   try {
     const id = crypto.randomUUID();
-    createPortfolio({ id, rpqEquityPct, rpqFiPct, equityBuyListId });
-    res.json({ id });
+    createPortfolio({ id, name, rpqEquityPct, rpqFiPct, equityBuyListId });
+    res.json({ id, name: name || "Portfolio" });
   } catch (err) {
     res.status(502).json({ error: "Failed to create portfolio: " + err.message });
   }

@@ -49,12 +49,12 @@ export async function getAIPortfolioConfig({ prompt, sectors, regions }) {
 // ============ Guided-flow portfolios (RPQ -> Equity -> Fixed Income -> Dashboard) ============
 
 // Creates the portfolio record once the equity leg's buy is saved — returns { id }, which the
-// browser keeps (localStorage) as the only way back to this portfolio's dashboard.
-export async function createPortfolio({ rpqEquityPct, rpqFiPct, equityBuyListId }) {
+// browser adds to its list (localStorage) of known portfolios to come back to on the Dashboard.
+export async function createPortfolio({ name, rpqEquityPct, rpqFiPct, equityBuyListId }) {
   const resp = await fetch(`${API_BASE}/api/portfolios`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ rpqEquityPct, rpqFiPct, equityBuyListId }),
+    body: JSON.stringify({ name, rpqEquityPct, rpqFiPct, equityBuyListId }),
   });
   return asJson(resp);
 }
