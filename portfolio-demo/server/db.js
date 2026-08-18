@@ -111,16 +111,33 @@ export function getBuyListById(id) {
  * full list of ids it's created (localStorage) to come back to the same portfolios later. Not tied
  * to any user account. `name` is chosen client-side (e.g. "Portfolio 2") so multiple portfolios in
  * the same browser are distinguishable on the Dashboard.
+ *
+ * Created once whichever leg finishes first has its buy saved — normally Equity, but a 0%-equity
+ * target skips straight to Fixed Income, so this accepts either (or both) leg ids at creation time
+ * rather than requiring equityBuyListId specifically.
  */
-export function createPortfolio({ id, name, rpqEquityPct, rpqFiPct, equityBuyListId }) {
+export function createPortfolio({ id, name, rpqEquityPct, rpqFiPct, equityBuyListId, bondBuyListId }) {
   db.prepare(`
-    INSERT INTO portfolios (id, created_at, name, rpq_equity_pct, rpq_fi_pct, equity_buy_list_id)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, new Date().toISOString(), name || "Portfolio", rpqEquityPct, rpqFiPct, equityBuyListId);
+    INSERT INTO portfolios (id, created_at, name, rpq_equity_pct, rpq_fi_pct, equity_buy_list_id, bond_buy_list_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, new Date().toISOString(), name || "Portfolio", rpqEquityPct, rpqFiPct, equityBuyListId || null, bondBuyListId || null);
 }
 
 export function attachBondBuy(id, bondBuyListId) {
   db.prepare(`UPDATE portfolios SET bond_buy_list_id = ? WHERE id = ?`).run(bondBuyListId, id);
+}
+
+// Re-points an already-created portfolio's equity leg at a fresh buy — used when someone backs up
+// from Fixed Income to Equity and rebuys, rather than letting the original equity leg go orphaned
+// while a second portfolio gets created for the new one.
+export function attachEquityBuy(id, equityBuyListId) {
+  db.prepare(`UPDATE portfolios SET equity_buy_list_id = ? WHERE id = ?`).run(equityBuyListId, id);
+}
+
+// Keeps a portfolio's stored target split in sync if someone backs all the way up to Risk profile
+// (after already buying a leg) and changes it before buying again.
+export function updateRpqSplit(id, rpqEquityPct, rpqFiPct) {
+  db.prepare(`UPDATE portfolios SET rpq_equity_pct = ?, rpq_fi_pct = ? WHERE id = ?`).run(rpqEquityPct, rpqFiPct, id);
 }
 
 export function markSold(id, side, sellBuyListId) {

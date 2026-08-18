@@ -3,7 +3,7 @@ import PortfolioBuilder from './PortfolioBuilder.jsx'
 import BondPortfolioBuilder from './BondPortfolioBuilder.jsx'
 import RiskQuestionnaire from './RiskQuestionnaire.jsx'
 import Dashboard from './Dashboard.jsx'
-import { createPortfolio, attachBondLeg } from './api.js'
+import { createPortfolio, attachBondLeg, attachEquityLeg, updatePortfolioSplit } from './api.js'
 
 const PORTFOLIO_IDS_KEY = 'tw_portfolio_ids'
 
@@ -18,16 +18,20 @@ function loadPortfolioIds() {
 
 // Guided flow: RPQ (mock risk questionnaire — a target Equity/Fixed Income % split plus how much
 // cash to invest) -> build and buy the Equity portion -> build and buy the Fixed Income portion ->
-// Dashboard. The Dashboard is a persistent hub, not the flow's terminus — from it, "Make new/
-// additional portfolio" re-enters RPQ -> Equity -> Fixed Income for a separate, independently
-// named portfolio, without discarding the ones already built. There's no login system, so "your
-// portfolios" persistence is just the list of server-generated ids the browser keeps in
-// localStorage; reopening the site with that list saved resumes straight at the Dashboard.
+// Dashboard. A 0% target on either side skips that step entirely (see handleRpqComplete/
+// handleEquityBuyComplete). The Dashboard is a persistent hub, not the flow's terminus — from it,
+// "Make new/additional portfolio" re-enters RPQ -> Equity -> Fixed Income for a separate,
+// independently named portfolio, without discarding the ones already built. There's no login
+// system, so "your portfolios" persistence is just the list of server-generated ids the browser
+// keeps in localStorage; reopening the site with that list saved resumes straight at the Dashboard.
 function App() {
   const [theme, setTheme] = useState('dark')
   const [step, setStep] = useState('rpq') // 'rpq' | 'equity' | 'fi' | 'dashboard'
   const [rpq, setRpq] = useState(null) // { equityPct, fiPct, cash, equityAmount, fiAmount }
-  const [portfolioId, setPortfolioId] = useState(null) // the one actively being built right now
+  // The portfolio-in-progress isn't created server-side until its first leg is actually bought.
+  // Once set, backing up and rebuying a leg PATCHes that same portfolio (see handleEquityBuyComplete/
+  // handleBondBuyComplete) rather than creating a duplicate and orphaning the original.
+  const [portfolioId, setPortfolioId] = useState(null)
   const [portfolioIds, setPortfolioIds] = useState([]) // every portfolio this browser has made
   const [prefillEquityPct, setPrefillEquityPct] = useState(60)
 
@@ -44,22 +48,43 @@ function App() {
     setPortfolioIds(ids)
   }
 
-  function handleRpqComplete(pct) {
+  async function handleRpqComplete(pct) {
     setRpq(pct)
-    setStep('equity')
+    // portfolioId is deliberately left as-is here (not reset) — if it's already set, that means
+    // Equity (or Fixed Income, if Equity was skipped) was already bought once and someone backed
+    // all the way up to RPQ and is resubmitting. The next leg they buy will PATCH that same
+    // portfolio rather than orphaning it (see handleEquityBuyComplete/handleBondBuyComplete) — but
+    // the target split itself needs syncing right away, since it's otherwise never touched again.
+    if (portfolioId) {
+      try {
+        await updatePortfolioSplit(portfolioId, pct.equityPct, pct.fiPct)
+      } catch (err) {
+        alert('Failed to update this portfolio\'s target split: ' + err.message)
+      }
+    }
+    // A 0% target on either side means that step has nothing to build — skip straight past it
+    // rather than making someone sit through a screen where every amount would be zero.
+    setStep(pct.equityPct === 0 ? 'fi' : 'equity')
   }
 
   async function handleEquityBuyComplete(result) {
     try {
-      const res = await createPortfolio({
-        name: `Portfolio ${portfolioIds.length + 1}`,
-        rpqEquityPct: rpq.equityPct,
-        rpqFiPct: rpq.fiPct,
-        equityBuyListId: result.buyListId,
-      })
-      setPortfolioId(res.id)
-      persistIds([...portfolioIds, res.id])
-      setStep('fi')
+      if (portfolioId) {
+        // Revising: this portfolio already exists (from an earlier pass through this flow before
+        // backing up), so re-point its equity leg rather than creating a duplicate.
+        await attachEquityLeg(portfolioId, result.buyListId)
+      } else {
+        const res = await createPortfolio({
+          name: `Portfolio ${portfolioIds.length + 1}`,
+          rpqEquityPct: rpq.equityPct,
+          rpqFiPct: rpq.fiPct,
+          equityBuyListId: result.buyListId,
+        })
+        setPortfolioId(res.id)
+        persistIds([...portfolioIds, res.id])
+      }
+      // Symmetric with the RPQ-time skip: a 0% Fixed Income target has nothing to build there.
+      setStep(rpq.fiPct === 0 ? 'dashboard' : 'fi')
     } catch (err) {
       // The equity buy itself already succeeded and is safely saved server-side — only the
       // portfolio-linking step failed, so surface it rather than silently stranding the user.
@@ -69,7 +94,21 @@ function App() {
 
   async function handleBondBuyComplete(result) {
     try {
-      await attachBondLeg(portfolioId, result.buyListId)
+      if (portfolioId) {
+        // Equity was built first in this pass (or on an earlier pass before backing up) — attach/
+        // re-point Fixed Income on that same portfolio.
+        await attachBondLeg(portfolioId, result.buyListId)
+      } else {
+        // Equity was skipped (0% target) — Fixed Income is this portfolio's first and only leg.
+        const res = await createPortfolio({
+          name: `Portfolio ${portfolioIds.length + 1}`,
+          rpqEquityPct: rpq.equityPct,
+          rpqFiPct: rpq.fiPct,
+          bondBuyListId: result.buyListId,
+        })
+        setPortfolioId(res.id)
+        persistIds([...portfolioIds, res.id])
+      }
       setStep('dashboard')
     } catch (err) {
       alert('Your Fixed Income portfolio was saved, but linking it to your portfolio failed: ' + err.message)
@@ -86,6 +125,20 @@ function App() {
     setRpq({ equityPct: rpqEquityPct, fiPct: rpqFiPct, cash: null, equityAmount: null, fiAmount })
     setPortfolioId(id)
     setStep('fi')
+  }
+
+  // Backing up from Equity to Risk profile. portfolioId is left untouched — if Equity was already
+  // bought before backing up, it stays linked to that portfolio, and handleRpqComplete syncs the
+  // target split server-side if it's changed on the way back through.
+  function handleBackToRpq() {
+    setStep('rpq')
+  }
+
+  // Backing up from Fixed Income — to Equity if this portfolio has one (the normal case), or all
+  // the way to Risk profile if Equity was skipped (0% target, so there's no Equity step to return
+  // to). portfolioId is left untouched so a rebuilt Equity leg re-points the same portfolio.
+  function handleBackFromFi() {
+    setStep(rpq && rpq.equityPct > 0 ? 'equity' : 'rpq')
   }
 
   // Starts an additional, independently named portfolio without discarding the ones already
@@ -109,13 +162,19 @@ function App() {
   }
 
   if (step === 'rpq') {
-    return <RiskQuestionnaire theme={theme} setTheme={setTheme} onComplete={handleRpqComplete} initialEquityPct={prefillEquityPct} />
+    // If rpq is already set, this is a "back" navigation rather than a fresh start — show what
+    // was previously entered instead of resetting to defaults. Cash itself was never persisted
+    // server-side (only the resulting split was), so it falls back to a default whenever it's not
+    // available (a genuinely fresh start, or backing up after a resumed-from-server session).
+    return <RiskQuestionnaire theme={theme} setTheme={setTheme} onComplete={handleRpqComplete}
+      initialEquityPct={rpq ? rpq.equityPct : prefillEquityPct}
+      initialCash={rpq && rpq.cash != null ? rpq.cash : 10000} />
   }
   if (step === 'equity') {
-    return <PortfolioBuilder theme={theme} setTheme={setTheme} rpq={rpq} onBuyComplete={handleEquityBuyComplete} />
+    return <PortfolioBuilder theme={theme} setTheme={setTheme} rpq={rpq} onBuyComplete={handleEquityBuyComplete} onBack={handleBackToRpq} />
   }
   if (step === 'fi') {
-    return <BondPortfolioBuilder theme={theme} setTheme={setTheme} rpq={rpq} onBuyComplete={handleBondBuyComplete} />
+    return <BondPortfolioBuilder theme={theme} setTheme={setTheme} rpq={rpq} onBuyComplete={handleBondBuyComplete} onBack={handleBackFromFi} />
   }
   return (
     <Dashboard

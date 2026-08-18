@@ -24,7 +24,11 @@ Equity + Fixed Income pair.
    applied to the cash figure automatically, so the next two steps' target
    amounts are pre-filled rather than asked for again. A **1.75% cash sleeve**
    (`CASH_ALLOCATION_PCT`, fixed policy, not affected by the split) is called
-   out here and held back from both legs — see "Cash allocation" below.
+   out here and held back from both legs — see "Cash allocation" below. A
+   **0% target on either side skips that step entirely** — 0% Equity goes
+   straight to Fixed Income, and 0% Fixed Income (after Equity) goes straight
+   to the Dashboard — rather than making someone build a portion that would
+   only ever end up empty.
 2. **Equity** (`src/PortfolioBuilder.jsx`) — the stock screener described
    below (live pricing, the AI "describe what you want" box, templates,
    build-your-own filters), its order-value field pre-filled from step 1.
@@ -43,6 +47,17 @@ Equity + Fixed Income pair.
    already in `bondData.js` (no live quote fetch needed — there's no feed
    for bonds), its order-value field also pre-filled from step 1. Ends with
    **Buy portfolio**, then **Continue to Dashboard →**.
+
+Both builder steps have a **← Back** link (to Risk Profile from Equity; to
+Equity — or Risk Profile, if Equity was skipped — from Fixed Income), so you
+can revisit an earlier step without losing progress:
+- Going back to Risk Profile shows whatever you previously entered (cash,
+  split), not blank defaults, so it's a real "adjust and continue" rather
+  than a restart.
+- If a leg was already bought before backing up, rebuying it re-points the
+  *same* portfolio at the new buy (`PATCH /api/portfolios/:id`) instead of
+  creating a duplicate and leaving the original orphaned; changing the split
+  itself syncs the portfolio's stored target too.
 4. **Dashboard** (`src/Dashboard.jsx`) has two views:
    - **Hub** (default) — an "Entire portfolio" section blending every
      portfolio's Equity legs and every portfolio's Fixed Income legs
@@ -293,14 +308,20 @@ portfolio-demo/
   → persists an already-priced-and-sized bond buy list (pricing/sizing
   happens client-side in `BondPortfolioBuilder.jsx`, since bond prices are
   static data, not a live quote); returns it.
-- `POST /api/portfolios` — `{ name, rpqEquityPct, rpqFiPct, equityBuyListId }`
-  → creates a portfolio record (server-generated UUID), called once the
-  Equity leg's buy is saved. `name` is chosen client-side (e.g. "Portfolio
-  2", counting up from how many portfolios this browser already knows
-  about) so multiple portfolios are distinguishable on the Dashboard.
-  Returns `{ id }`.
-- `PATCH /api/portfolios/:id` — `{ bondBuyListId }` → attaches the Fixed
-  Income leg once its buy is saved.
+- `POST /api/portfolios` — `{ name, rpqEquityPct, rpqFiPct, equityBuyListId?, bondBuyListId? }`
+  → creates a portfolio record (server-generated UUID), called once
+  whichever leg finishes first has its buy saved — normally Equity, but a
+  0%-equity target skips straight to Fixed Income, so at least one of
+  `equityBuyListId`/`bondBuyListId` is required, not `equityBuyListId`
+  specifically. `name` is chosen client-side (e.g. "Portfolio 2", counting
+  up from how many portfolios this browser already knows about) so multiple
+  portfolios are distinguishable on the Dashboard. Returns `{ id }`.
+- `PATCH /api/portfolios/:id` — `{ bondBuyListId?, equityBuyListId?, rpqEquityPct?, rpqFiPct? }`
+  → updates an already-created portfolio: attaches the Fixed Income leg
+  (normal path), re-points the Equity leg at a fresh buy (if someone backed
+  up from Fixed Income and rebought — see "The guided flow" above), and/or
+  syncs the target split (if the split changed on a trip back to Risk
+  Profile). At least one field must be present; any combination is valid.
 - `GET /api/portfolios/:id` — the Dashboard's one fetch: portfolio metadata
   (RPQ target, sold status per leg) plus both legs' full buy (and, once
   sold, sell) records, holdings included.

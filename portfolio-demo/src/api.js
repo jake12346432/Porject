@@ -48,13 +48,14 @@ export async function getAIPortfolioConfig({ prompt, sectors, regions }) {
 
 // ============ Guided-flow portfolios (RPQ -> Equity -> Fixed Income -> Dashboard) ============
 
-// Creates the portfolio record once the equity leg's buy is saved — returns { id }, which the
-// browser adds to its list (localStorage) of known portfolios to come back to on the Dashboard.
-export async function createPortfolio({ name, rpqEquityPct, rpqFiPct, equityBuyListId }) {
+// Creates the portfolio record once whichever leg finishes first has its buy saved — normally
+// Equity, but a 0%-equity target skips straight to Fixed Income, so this accepts either leg id.
+// Returns { id }, which the browser adds to its list (localStorage) of known portfolios.
+export async function createPortfolio({ name, rpqEquityPct, rpqFiPct, equityBuyListId, bondBuyListId }) {
   const resp = await fetch(`${API_BASE}/api/portfolios`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, rpqEquityPct, rpqFiPct, equityBuyListId }),
+    body: JSON.stringify({ name, rpqEquityPct, rpqFiPct, equityBuyListId, bondBuyListId }),
   });
   return asJson(resp);
 }
@@ -65,6 +66,28 @@ export async function attachBondLeg(portfolioId, bondBuyListId) {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ bondBuyListId }),
+  });
+  return asJson(resp);
+}
+
+// Re-points an already-created portfolio's equity leg at a fresh buy — used when someone backs up
+// from Fixed Income to Equity and rebuys, instead of leaving the original leg orphaned.
+export async function attachEquityLeg(portfolioId, equityBuyListId) {
+  const resp = await fetch(`${API_BASE}/api/portfolios/${portfolioId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ equityBuyListId }),
+  });
+  return asJson(resp);
+}
+
+// Syncs an already-created portfolio's target split — used when someone backs all the way up to
+// Risk profile (after already buying a leg) and changes the split before buying again.
+export async function updatePortfolioSplit(portfolioId, rpqEquityPct, rpqFiPct) {
+  const resp = await fetch(`${API_BASE}/api/portfolios/${portfolioId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rpqEquityPct, rpqFiPct }),
   });
   return asJson(resp);
 }

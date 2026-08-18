@@ -414,7 +414,7 @@ function AllocBarChart({ data, t, color }) {
 // `rpq` and `onBuyComplete` are set by the guided flow (RPQ -> Equity -> Fixed Income ->
 // Dashboard), which is now the only way this component is rendered — see PortfolioBuilder.jsx
 // for the same pattern on the equity side.
-export default function BondPortfolioBuilder({ theme, setTheme, rpq, onBuyComplete }) {
+export default function BondPortfolioBuilder({ theme, setTheme, rpq, onBuyComplete, onBack }) {
   const t = THEMES[theme];
 
   const [regionFilter, setRegionFilter] = useState(new Set(REGIONS));
@@ -645,12 +645,19 @@ export default function BondPortfolioBuilder({ theme, setTheme, rpq, onBuyComple
 
       <div style={{ maxWidth: 1160, margin: "0 auto", padding: "40px 28px 80px" }}>
 
+        {onBack && (
+          <button onClick={onBack} style={{ fontSize: 12.5, color: t.muted, background: "none", border: "none", cursor: "pointer", marginBottom: 14, padding: 0, display: "block" }}>
+            {rpq && rpq.equityPct > 0 ? "← Back to Equity" : "← Back to Risk Profile"}
+          </button>
+        )}
+
         {rpq && (
           <div style={{
             textAlign: "center", marginBottom: 20, padding: "10px 16px", borderRadius: 10,
             background: t.surface2, border: `1px solid ${t.borderMuted}`, fontSize: 13, color: t.textSecondary,
           }}>
-            Your target allocation: {rpq.equityPct}% Equity / <strong style={{ color: t.textStrong }}>{rpq.fiPct}% Fixed Income</strong> — the Equity portion is already saved. Build this portion now.
+            Your target allocation: {rpq.equityPct}% Equity / <strong style={{ color: t.textStrong }}>{rpq.fiPct}% Fixed Income</strong>
+            {rpq.equityPct > 0 ? " — the Equity portion is already saved. Build this portion now." : " — 0% Equity means there's no Equity portion to build. Build this portion now."}
           </div>
         )}
 

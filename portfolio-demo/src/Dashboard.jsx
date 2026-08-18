@@ -204,7 +204,9 @@ export default function Dashboard({ theme, setTheme, portfolioIds, onResumeFi, o
   }
 
   const selected = selectedId ? portfolios.find(p => p.id === selectedId) : null;
-  const incomplete = portfolios.find(p => p.equity && !p.bond);
+  // "Incomplete" means missing a leg it actually needs — a 0% target on either side means that
+  // side was deliberately skipped, not left unfinished, so it must never count as missing.
+  const incomplete = portfolios.find(p => p.rpqFiPct > 0 && p.equity && !p.bond);
 
   return (
     <div style={{ minHeight: "100vh", background: t.bg, color: t.text, fontFamily: "'IBM Plex Sans', sans-serif" }}>
@@ -303,13 +305,13 @@ function DashboardHub({ t, portfolios, incomplete, onSelect, onResumeFi, onMakeA
               <div style={{ fontSize: 15, fontWeight: 800, color: t.textStrong, marginBottom: 6 }}>{p.name}</div>
               <div style={{ fontSize: 12, color: t.muted, marginBottom: 8 }}>{p.rpqEquityPct}% Equity / {p.rpqFiPct}% Fixed Income</div>
               <div style={{ fontSize: 11.5, color: t.faint }}>
-                {p.equity ? `$${p.equity.totalAllocated.toLocaleString(undefined, { maximumFractionDigits: 0 })} equity` : "Equity not built"}
+                {p.equity ? `$${p.equity.totalAllocated.toLocaleString(undefined, { maximumFractionDigits: 0 })} equity` : p.rpqEquityPct === 0 ? "No equity target" : "Equity not built yet"}
                 {" · "}
-                {p.bond ? `£${p.bond.totalAllocated.toLocaleString(undefined, { maximumFractionDigits: 0 })} FI` : "FI not built"}
+                {p.bond ? `£${p.bond.totalAllocated.toLocaleString(undefined, { maximumFractionDigits: 0 })} FI` : p.rpqFiPct === 0 ? "No FI target" : "FI not built yet"}
               </div>
               {(p.equitySoldAt || p.bondSoldAt) && (
                 <div style={{ fontSize: 11, color: t.positive, marginTop: 6 }}>
-                  {p.equitySoldAt && p.bondSoldAt ? "Fully sold" : "Partially sold"}
+                  {(p.rpqEquityPct === 0 || p.equitySoldAt) && (p.rpqFiPct === 0 || p.bondSoldAt) ? "Fully sold" : "Partially sold"}
                 </div>
               )}
             </button>
@@ -339,8 +341,11 @@ function DashboardHub({ t, portfolios, incomplete, onSelect, onResumeFi, onMakeA
 
 function PortfolioDetail({ t, portfolio, selling, sellError, onSell, onBack }) {
   const { name, rpqEquityPct, rpqFiPct, equity, bond, equitySoldAt, bondSoldAt } = portfolio;
-  const bothSold = equitySoldAt && bondSoldAt;
-  const bothDone = equity && bond;
+  // A 0% target on either side means that leg was deliberately skipped, not left unfinished/
+  // unsold — so it must count as already "done"/"sold" for that side, not block on a leg that
+  // was never meant to exist.
+  const bothDone = (rpqEquityPct === 0 || equity) && (rpqFiPct === 0 || bond);
+  const bothSold = (rpqEquityPct === 0 || equitySoldAt) && (rpqFiPct === 0 || bondSoldAt);
 
   return (
     <>
@@ -423,7 +428,7 @@ function PortfolioDetail({ t, portfolio, selling, sellError, onSell, onBack }) {
 
       {bothDone && (
         <div style={{ textAlign: "center", marginTop: 10 }}>
-          <SellButton t={t} label="Sell entire portfolio" sold={bothSold} soldAt={bothSold ? [equitySoldAt, bondSoldAt].sort().pop() : null} loading={selling === "all"} disabled={bothSold} onClick={() => onSell("all")} />
+          <SellButton t={t} label="Sell entire portfolio" sold={bothSold} soldAt={bothSold ? [equitySoldAt, bondSoldAt].filter(Boolean).sort().pop() : null} loading={selling === "all"} disabled={bothSold} onClick={() => onSell("all")} />
         </div>
       )}
     </>

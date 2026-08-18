@@ -6,7 +6,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import {
   insertBuyList, getBuyListsForDate, getBuyListById,
-  createPortfolio, attachBondBuy, getPortfolioById, markSold,
+  createPortfolio, attachBondBuy, attachEquityBuy, updateRpqSplit, getPortfolioById, markSold,
 } from "./db.js";
 import { getQuotes } from "./quotes.js";
 import { buildBuyList, buildSellList, buildDailyWorkbook } from "./orders.js";
@@ -110,32 +110,43 @@ app.post("/api/buy-bonds", (req, res) => {
 // (localStorage) to come back to the same dashboard. It ties one equity buy and one bond buy
 // together along with the RPQ's target split, and tracks whether each leg has since been sold.
 
-// Created once the equity leg's buy has been saved (the id it needs already exists by then).
+// Created once whichever leg finishes first has its buy saved — normally Equity, but a 0%-equity
+// target skips straight to Fixed Income, so this accepts either leg id (not equityBuyListId
+// specifically).
 app.post("/api/portfolios", (req, res) => {
-  const { name, rpqEquityPct, rpqFiPct, equityBuyListId } = req.body || {};
-  if (typeof rpqEquityPct !== "number" || typeof rpqFiPct !== "number" || !equityBuyListId) {
-    return res.status(400).json({ error: "Body must include numeric rpqEquityPct, rpqFiPct, and equityBuyListId." });
+  const { name, rpqEquityPct, rpqFiPct, equityBuyListId, bondBuyListId } = req.body || {};
+  if (typeof rpqEquityPct !== "number" || typeof rpqFiPct !== "number" || (!equityBuyListId && !bondBuyListId)) {
+    return res.status(400).json({ error: "Body must include numeric rpqEquityPct, rpqFiPct, and at least one of equityBuyListId/bondBuyListId." });
   }
   try {
     const id = crypto.randomUUID();
-    createPortfolio({ id, name, rpqEquityPct, rpqFiPct, equityBuyListId });
+    createPortfolio({ id, name, rpqEquityPct, rpqFiPct, equityBuyListId, bondBuyListId });
     res.json({ id, name: name || "Portfolio" });
   } catch (err) {
     res.status(502).json({ error: "Failed to create portfolio: " + err.message });
   }
 });
 
-// Attaches the bond leg once the Fixed Income step's buy has been saved.
+// Updates an already-created portfolio: attaches a leg's buy (either the Fixed Income leg once
+// the Fixed Income step's buy has been saved — the normal path — or a re-point of the Equity leg
+// at a fresh buy if someone backed up from Fixed Income to Equity and rebought), and/or syncs the
+// target split if someone backed all the way up to Risk profile and changed it. At least one field
+// must be present, but any combination is valid.
 app.patch("/api/portfolios/:id", (req, res) => {
-  const { bondBuyListId } = req.body || {};
-  if (!bondBuyListId) return res.status(400).json({ error: "Body must include bondBuyListId." });
+  const { bondBuyListId, equityBuyListId, rpqEquityPct, rpqFiPct } = req.body || {};
+  const hasSplitUpdate = typeof rpqEquityPct === "number" && typeof rpqFiPct === "number";
+  if (!bondBuyListId && !equityBuyListId && !hasSplitUpdate) {
+    return res.status(400).json({ error: "Body must include bondBuyListId, equityBuyListId, or both rpqEquityPct/rpqFiPct." });
+  }
   const existing = getPortfolioById(req.params.id);
   if (!existing) return res.status(404).json({ error: "Portfolio not found." });
   try {
-    attachBondBuy(req.params.id, bondBuyListId);
+    if (bondBuyListId) attachBondBuy(req.params.id, bondBuyListId);
+    if (equityBuyListId) attachEquityBuy(req.params.id, equityBuyListId);
+    if (hasSplitUpdate) updateRpqSplit(req.params.id, rpqEquityPct, rpqFiPct);
     res.json({ ok: true });
   } catch (err) {
-    res.status(502).json({ error: "Failed to attach bond leg: " + err.message });
+    res.status(502).json({ error: "Failed to update portfolio: " + err.message });
   }
 });
 

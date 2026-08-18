@@ -825,7 +825,7 @@ function AllocBarChart({ data, t = THEMES.dark, color }) {
 // Fixed Income step) are only set when this runs inside the guided flow — which, since the flow
 // replaced the old free-standing Equity/Fixed Income tabs, is the only way this component is
 // rendered now.
-export default function PortfolioBuilder({ theme, setTheme, rpq, onBuyComplete }) {
+export default function PortfolioBuilder({ theme, setTheme, rpq, onBuyComplete, onBack }) {
   const t = THEMES[theme];
 
   // Hard filters
@@ -1349,6 +1349,12 @@ ${list}`;
       </div>
 
       <div style={{ maxWidth: 1160, margin: "0 auto", padding: "40px 28px 80px" }}>
+
+        {onBack && (
+          <button onClick={onBack} style={{ fontSize: 12.5, color: t.muted, background: "none", border: "none", cursor: "pointer", marginBottom: 14, padding: 0, display: "block" }}>
+            ← Back to Risk Profile
+          </button>
+        )}
 
         {rpq && (
           <div style={{
