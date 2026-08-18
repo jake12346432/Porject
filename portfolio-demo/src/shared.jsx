@@ -96,33 +96,43 @@ export function SplitBarChart({ data, t = THEMES.dark }) {
   );
 }
 
-// Non-interactive step indicator replacing the old clickable Equity/Fixed Income tab switcher —
-// the guided flow is linear now (RPQ -> Equity -> Fixed Income -> Dashboard), so free tab-switching
-// no longer makes sense; this just shows where you are and what's done.
+// Step indicator for the guided flow (RPQ -> Equity -> Fixed Income -> Summary -> Dashboard).
+// Clickable when `onStepClick` is passed: a step is only navigable if it's already been reached
+// (done or active) — jumping ahead to a step whose data doesn't exist yet isn't offered. The
+// caller (App.jsx) decides reachability per-step (e.g. Equity/Fixed Income only if their rpq
+// target is > 0) and passes back only the keys it's actually willing to route to.
 const STEPS = [
   ["rpq", "Risk profile"],
   ["equity", "Equity"],
   ["fi", "Fixed Income"],
+  ["summary", "Summary"],
   ["dashboard", "Dashboard"],
 ];
-export function FlowBreadcrumb({ step, t = THEMES.dark }) {
+export function FlowBreadcrumb({ step, t = THEMES.dark, onStepClick, reachable }) {
   const currentIdx = STEPS.findIndex(([key]) => key === step);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       {STEPS.map(([key, label], i) => {
         const done = i < currentIdx;
         const active = i === currentIdx;
+        const clickable = !!onStepClick && !active && (reachable ? reachable.has(key) : done);
         return (
           <React.Fragment key={key}>
             {i > 0 && <div style={{ width: 12, height: 1, background: t.borderMuted }} />}
-            <div style={{
-              padding: "5px 10px", borderRadius: 6,
-              background: active ? t.accent : "transparent",
-              border: `1px solid ${active ? t.accent : t.borderMuted}`,
-              color: active ? "#FFFFFF" : done ? t.textSecondary : t.faint,
-              fontSize: 11.5, fontWeight: active ? 700 : 500, fontFamily: "'Inter', sans-serif",
-              whiteSpace: "nowrap",
-            }}>
+            <div
+              onClick={clickable ? () => onStepClick(key) : undefined}
+              onMouseEnter={e => { if (clickable) e.currentTarget.style.borderColor = t.accent; }}
+              onMouseLeave={e => { if (clickable) e.currentTarget.style.borderColor = t.borderMuted; }}
+              style={{
+                padding: "5px 10px", borderRadius: 6,
+                background: active ? t.accent : "transparent",
+                border: `1px solid ${active ? t.accent : t.borderMuted}`,
+                color: active ? "#FFFFFF" : done ? t.textSecondary : t.faint,
+                fontSize: 11.5, fontWeight: active ? 700 : 500, fontFamily: "'Inter', sans-serif",
+                whiteSpace: "nowrap", cursor: clickable ? "pointer" : "default",
+                transition: "border-color 0.15s",
+              }}
+            >
               {done ? "✓ " : ""}{label}
             </div>
           </React.Fragment>

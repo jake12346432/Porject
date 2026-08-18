@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { BONDS, REGIONS, SECTORS, YTM_MIN, YTM_MAX, DURATION_MIN, DURATION_MAX } from "./bondData.js";
-import { submitBondBuy } from "./api.js";
 import { FlowBreadcrumb } from "./shared.jsx";
 
 // Fixed S&P/Fitch-style rating bands, independent of what's currently in bondData.js — the
@@ -83,12 +82,6 @@ const TEMPLATES = [
     config: { regions: [], sectors: [], ratings: [], ytmMin: YTM_MIN, ytmMax: YTM_MAX, durationMin: DURATION_MIN, durationMax: DURATION_MAX },
   },
 ];
-
-// Fixed cash sleeve, same figure and same rationale as the equity builder's CASH_ALLOCATION_PCT —
-// a deliberate policy held back from every buy regardless of the RPQ's target split, not something
-// derived from it. Duplicated here (rather than imported) matching this file's existing pattern of
-// keeping its own copy of constants also defined in PortfolioBuilder.jsx.
-const CASH_ALLOCATION_PCT = 1.75;
 
 /* ============================== HELPERS ============================== */
 // The hard-filter predicate, shared by the engine and the live "N bonds eligible" preview so they
@@ -414,7 +407,7 @@ function AllocBarChart({ data, t, color }) {
 // `rpq` and `onBuyComplete` are set by the guided flow (RPQ -> Equity -> Fixed Income ->
 // Dashboard), which is now the only way this component is rendered — see PortfolioBuilder.jsx
 // for the same pattern on the equity side.
-export default function BondPortfolioBuilder({ theme, setTheme, rpq, onBuyComplete, onBack }) {
+export default function BondPortfolioBuilder({ theme, setTheme, rpq, onBuyComplete, onBack, onStepClick, reachableSteps }) {
   const t = THEMES[theme];
 
   const [regionFilter, setRegionFilter] = useState(new Set(REGIONS));
@@ -434,9 +427,6 @@ export default function BondPortfolioBuilder({ theme, setTheme, rpq, onBuyComple
   const [poundAmount, setPoundAmount] = useState(rpq?.fiAmount ?? 10000);
   const [buyName, setBuyName] = useState("");
   const [buyNameTouched, setBuyNameTouched] = useState(false);
-  const [buyLoading, setBuyLoading] = useState(false);
-  const [buyError, setBuyError] = useState(null);
-  const [lockedPortfolio, setLockedPortfolio] = useState(null);
   useEffect(() => {
     if (!buyNameTouched && portfolio?.meta?.name) setBuyName(portfolio.meta.name);
   }, [portfolio, buyNameTouched]);
@@ -510,52 +500,19 @@ export default function BondPortfolioBuilder({ theme, setTheme, rpq, onBuyComple
     setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   }
 
-  // Bonds have no live quote feed to hit — bondData.js already bakes in a price for each
-  // instrument, so pricing happens right here client-side (unlike equity, which needs a
-  // server-side live-quote fetch first) and the server call just persists the finished order.
-  async function buyBondPortfolio() {
-    if (!portfolio?.selected?.length || buyLoading) return;
-    setBuyLoading(true); setBuyError(null);
-    try {
-      const priced = portfolio.selected.filter(b => b.price != null);
-      if (priced.length === 0) throw new Error("None of the selected bonds have a price available to size an order against.");
-      // Only invest (100 - CASH_ALLOCATION_PCT)% of the target — the rest is a deliberate cash
-      // sleeve, same policy as the equity builder. Weights among holdings are unchanged (still sum
-      // to 100% of the bond portion); the cash held back is against the FULL poundAmount, not the
-      // reduced invested amount.
-      const investAmount = poundAmount * (1 - CASH_ALLOCATION_PCT / 100);
-      const wSum = priced.reduce((a, b) => a + b.weight, 0) || 1;
-      const holdings = priced.map(b => {
-        const w = b.weight / wSum;
-        return {
-          isin: b.isin, name: b.name, region: b.region, sector: b.sector,
-          coupon: b.coupon, maturity: b.maturity, ytm: b.ytm, duration: b.duration,
-          price: b.price, weight: w * 100, amount: w * investAmount,
-        };
-      });
-      const totalAllocated = holdings.reduce((a, h) => a + h.amount, 0);
-      const result = await submitBondBuy({
-        portfolioName: buyName.trim() || "Untitled bond portfolio",
-        poundAmount,
-        holdings,
-        totalAllocated,
-        cash: poundAmount - totalAllocated,
-      });
-      setLockedPortfolio({
-        timestamp: new Date().toLocaleString(),
-        poundAmount,
-        holdings: result.holdings,
-        totalAllocated: result.totalAllocated,
-        cash: result.cash,
-        skippedCount: portfolio.selected.length - priced.length,
-        id: result.id,
-        tradeDate: result.tradeDate,
-      });
-    } catch (err) {
-      setBuyError(err.message || "Failed to save this order.");
-    } finally {
-      setBuyLoading(false);
-    }
+  // Packages the drafted (unpriced-into-an-order, though bonds already carry a static price)
+  // portfolio for the Portfolio Summary step — no server call happens here. Bonds have no live
+  // quote feed, so per-holding £ amounts are computed at the Summary step from these weights,
+  // mirroring what used to happen here directly.
+  function continueToSummary() {
+    if (!onBuyComplete) return;
+    const priced = portfolio.selected.filter(b => b.price != null);
+    onBuyComplete({
+      portfolioName: buyName.trim() || "Untitled bond portfolio",
+      poundAmount,
+      holdings: priced,
+      skippedCount: portfolio.selected.length - priced.length,
+    });
   }
 
   const stats = portfolio?.stats;
@@ -614,7 +571,7 @@ export default function BondPortfolioBuilder({ theme, setTheme, rpq, onBuyComple
           <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 500, color: t.muted }}>Wealth</span>
         </div>
         <div style={{ width: 1, height: 22, background: t.gridLine, margin: "0 4px" }} />
-        <FlowBreadcrumb t={t} step="fi" />
+        <FlowBreadcrumb t={t} step="fi" onStepClick={onStepClick} reachable={reachableSteps} />
 
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 16 }}>
           <button
@@ -900,91 +857,49 @@ export default function BondPortfolioBuilder({ theme, setTheme, rpq, onBuyComple
               </table>
             </div>
 
-            {/* ============ ORDER TICKET ============ */}
-            <div style={{ marginTop: 26, background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: 16 }}>
-              <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.6, marginBottom: 12 }}>
-                Sizes an order across <b style={{ color: t.textSecondary }}>all {portfolio.selected.length} current holdings</b> at
-                their bonds' priced values and adds it to <b style={{ color: t.textSecondary }}>today's combined order book</b> —
-                no real trade is placed. Not financial advice.
+            {/* REVIEW & CONTINUE — no buy happens here anymore: this portfolio is priced, sized,
+                and saved together with the Equity portion (if any) in one combined order at the
+                Portfolio Summary step, so nothing is sent until both sides are built. */}
+            <div style={{ marginTop: 26 }}>
+              <div style={{ fontSize: 11.5, color: t.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+                Review & continue
               </div>
-              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                <span style={{ fontSize: 12, color: t.muted }}>Portfolio name</span>
-                <input type="text" value={buyName}
-                  onChange={e => { setBuyName(e.target.value); setBuyNameTouched(true); }}
-                  placeholder="e.g. Client A - Short Duration"
-                  style={{ width: 220, background: t.surface2, color: t.text, border: `1px solid ${t.borderStrong}`, borderRadius: 6, padding: "7px 9px", fontSize: 12.5 }} />
-                <span style={{ fontSize: 12, color: t.muted }}>Portfolio value</span>
-                <span style={{ fontSize: 12, color: t.faint }}>£</span>
-                <input type="number" value={poundAmount} min={0}
-                  onChange={e => setPoundAmount(Math.max(0, parseFloat(e.target.value) || 0))}
-                  style={{ width: 120, background: t.surface2, color: t.text, border: `1px solid ${t.borderStrong}`, borderRadius: 6, padding: "7px 9px", fontFamily: "'IBM Plex Mono', monospace", fontSize: 12.5 }} />
-                <button className="tw-btn-primary" onClick={buyBondPortfolio} disabled={buyLoading || portfolio.selected.length === 0} style={{
-                  padding: "11px 20px", borderRadius: 99, border: "none", cursor: buyLoading ? "default" : "pointer",
-                  background: buyLoading ? t.borderStrong : `linear-gradient(135deg, ${t.positive}, #1a8f5c)`, color: "#FFFFFF",
-                  fontWeight: 800, fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase",
-                }}>{buyLoading ? "Saving…" : "🔒 Buy portfolio"}</button>
-              </div>
-              {buyError && <div style={{ fontSize: 11.5, color: t.negative, marginTop: 10, lineHeight: 1.5, wordBreak: "break-word" }}>{buyError}</div>}
-            </div>
 
-            {lockedPortfolio && (
-              <div style={{ marginTop: 16, background: t.surface, border: `1px solid ${t.lockBorder}`, borderRadius: 10, padding: 16 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
-                  <div>
-                    <div style={{ fontSize: 13, color: t.positive, fontWeight: 600 }}>✓ Saved to today's order book{lockedPortfolio.id ? ` (#${lockedPortfolio.id})` : ""}</div>
-                    <div style={{ fontSize: 11, color: t.faint, marginTop: 2 }}>
-                      Locked {lockedPortfolio.timestamp} · £{lockedPortfolio.poundAmount.toLocaleString()} target · {lockedPortfolio.holdings.length} names
-                      {lockedPortfolio.tradeDate ? ` · trade date ${lockedPortfolio.tradeDate}` : ""}
-                      {lockedPortfolio.skippedCount ? ` · ${lockedPortfolio.skippedCount} holding(s) skipped (no price)` : ""}
-                    </div>
-                  </div>
-                  <button onClick={() => setLockedPortfolio(null)} style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", padding: "7px 14px", borderRadius: 99, border: `1px solid ${t.borderStrong}`, background: "transparent", color: t.muted, cursor: "pointer" }}>Clear</button>
+              <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: 16 }}>
+                <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.6, marginBottom: 12 }}>
+                  This is priced and saved together with your Equity portion, as one combined
+                  order, at the Portfolio Summary step — nothing is sent yet.
                 </div>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-                  <thead><tr style={{ background: t.surface2 }}>
-                    {["Instrument", "Weight", "Price", "Amount"].map((h, i) => (
-                      <th key={h} style={{ padding: "7px 10px", fontWeight: 500, color: t.muted, fontSize: 10.5, textTransform: "uppercase", textAlign: i >= 1 ? "right" : "left" }}>{h}</th>
-                    ))}
-                  </tr></thead>
-                  <tbody>
-                    {lockedPortfolio.holdings.map(h => (
-                      <tr key={h.isin} style={{ borderTop: `1px solid ${t.surfaceAlt}` }}>
-                        <td style={{ padding: "6px 10px", color: t.textSecondary, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.name}</td>
-                        <td style={{ padding: "6px 10px", textAlign: "right", fontFamily: "'IBM Plex Mono', monospace" }}>{h.weight.toFixed(2)}%</td>
-                        <td style={{ padding: "6px 10px", textAlign: "right", fontFamily: "'IBM Plex Mono', monospace" }}>{h.price != null ? h.price.toFixed(2) : "—"}</td>
-                        <td style={{ padding: "6px 10px", textAlign: "right", fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600 }}>£{h.amount.toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <div style={{ fontSize: 10.5, color: t.faint, marginTop: 10 }}>
-                  Allocated £{lockedPortfolio.totalAllocated.toFixed(2)} of £{lockedPortfolio.poundAmount.toFixed(2)} (£{lockedPortfolio.cash.toFixed(2)} unallocated).
-                  This is an order ticket for your own records, not an executed trade.
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 12, color: t.muted }}>Portfolio name</span>
+                  <input type="text" value={buyName}
+                    onChange={e => { setBuyName(e.target.value); setBuyNameTouched(true); }}
+                    placeholder="e.g. Client A - Short Duration"
+                    style={{ width: 220, background: t.surface2, color: t.text, border: `1px solid ${t.borderStrong}`, borderRadius: 6, padding: "7px 9px", fontSize: 12.5 }} />
+                  <span style={{ fontSize: 12, color: t.muted }}>Portfolio value</span>
+                  <span style={{ fontSize: 12, color: t.faint }}>£</span>
+                  <input type="number" value={poundAmount} min={0}
+                    onChange={e => setPoundAmount(Math.max(0, parseFloat(e.target.value) || 0))}
+                    style={{ width: 120, background: t.surface2, color: t.text, border: `1px solid ${t.borderStrong}`, borderRadius: 6, padding: "7px 9px", fontFamily: "'IBM Plex Mono', monospace", fontSize: 12.5 }} />
                 </div>
-                {onBuyComplete && (
-                  <button
-                    onClick={() => onBuyComplete({
-                      buyListId: lockedPortfolio.id,
-                      portfolioName: buyName.trim() || "Untitled bond portfolio",
-                      poundAmount: lockedPortfolio.poundAmount,
-                      totalAllocated: lockedPortfolio.totalAllocated,
-                      cash: lockedPortfolio.cash,
-                      holdings: lockedPortfolio.holdings,
-                    })}
-                    className="tw-btn-primary"
-                    style={{
-                      marginTop: 16, width: "100%", padding: "14px 26px", borderRadius: 99,
-                      border: `1px solid ${t.borderStrong}`,
-                      background: `linear-gradient(135deg, ${t.lavender}, ${t.accent})`, color: "#FFFFFF",
-                      fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "'Inter', sans-serif",
-                      letterSpacing: "0.06em", textTransform: "uppercase",
-                    }}
-                  >
-                    Continue to Dashboard →
-                  </button>
-                )}
               </div>
-            )}
+
+              {onBuyComplete && (
+                <button
+                  onClick={continueToSummary}
+                  className="tw-btn-primary"
+                  style={{
+                    marginTop: 16, width: "100%", padding: "14px 26px", borderRadius: 99,
+                    border: `1px solid ${t.borderStrong}`,
+                    background: `linear-gradient(135deg, ${t.lavender}, ${t.accent})`, color: "#FFFFFF",
+                    fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "'Inter', sans-serif",
+                    letterSpacing: "0.06em", textTransform: "uppercase",
+                  }}
+                >
+                  Continue to Portfolio Summary →
+                </button>
+              )}
+            </div>
 
             <div style={{ textAlign: "center", marginTop: 40, fontSize: 11.5, color: t.faint, lineHeight: 1.6, maxWidth: 720, marginLeft: "auto", marginRight: "auto" }}>
               This is placeholder bond data pending an official GBP corporate bond list — government

@@ -107,7 +107,7 @@ function SellButton({ label, onClick, disabled, sold, soldAt, loading, t }) {
   );
 }
 
-function NavBar({ theme, setTheme, t }) {
+function NavBar({ theme, setTheme, t, onStepClick, reachableSteps }) {
   return (
     <div style={{
       position: "sticky", top: 0, zIndex: 10, display: "flex", alignItems: "center", gap: 16,
@@ -128,7 +128,7 @@ function NavBar({ theme, setTheme, t }) {
         <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 500, color: t.muted }}>Wealth</span>
       </div>
       <div style={{ width: 1, height: 22, background: t.gridLine, margin: "0 4px" }} />
-      <FlowBreadcrumb t={t} step="dashboard" />
+      <FlowBreadcrumb t={t} step="dashboard" onStepClick={onStepClick} reachable={reachableSteps} />
       <div style={{ marginLeft: "auto" }}>
         <button
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
@@ -145,7 +145,7 @@ function NavBar({ theme, setTheme, t }) {
   );
 }
 
-export default function Dashboard({ theme, setTheme, portfolioIds, onResumeFi, onMakeAdditional, onStartOver }) {
+export default function Dashboard({ theme, setTheme, portfolioIds, onResumeFi, onMakeAdditional, onStartOver, onStepClick, reachableSteps }) {
   const t = THEMES[theme];
   const [portfolios, setPortfolios] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -183,7 +183,7 @@ export default function Dashboard({ theme, setTheme, portfolioIds, onResumeFi, o
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
-        <NavBar theme={theme} setTheme={setTheme} t={t} />
+        <NavBar theme={theme} setTheme={setTheme} t={t} onStepClick={onStepClick} reachableSteps={reachableSteps} />
         <div style={{ textAlign: "center", padding: "100px 20px", color: t.muted }}>Loading your portfolios…</div>
       </div>
     );
@@ -192,7 +192,7 @@ export default function Dashboard({ theme, setTheme, portfolioIds, onResumeFi, o
   if (error) {
     return (
       <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
-        <NavBar theme={theme} setTheme={setTheme} t={t} />
+        <NavBar theme={theme} setTheme={setTheme} t={t} onStepClick={onStepClick} reachableSteps={reachableSteps} />
         <div style={{ textAlign: "center", padding: "100px 20px" }}>
           <div style={{ color: t.negative, marginBottom: 16 }}>{error}</div>
           <button onClick={onStartOver} style={{ padding: "10px 22px", borderRadius: 99, border: `1px solid ${t.borderStrong}`, background: "transparent", color: t.textSecondary, cursor: "pointer" }}>
@@ -210,7 +210,7 @@ export default function Dashboard({ theme, setTheme, portfolioIds, onResumeFi, o
 
   return (
     <div style={{ minHeight: "100vh", background: t.bg, color: t.text, fontFamily: "'IBM Plex Sans', sans-serif" }}>
-      <NavBar theme={theme} setTheme={setTheme} t={t} />
+      <NavBar theme={theme} setTheme={setTheme} t={t} onStepClick={onStepClick} reachableSteps={reachableSteps} />
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "40px 28px 100px" }}>
 
         {selected ? (

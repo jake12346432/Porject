@@ -7,13 +7,21 @@ day into one bulk order sheet for the next market open.
 
 ## The guided flow
 
-Building one portfolio is a linear sequence — there's no way to jump
-straight to Equity or Fixed Income — but the **Dashboard is a persistent
-hub, not the flow's endpoint**: once you've built one portfolio, "Make new/
-additional portfolio" re-enters the same sequence to build a separate,
-independently named one, without discarding the ones already built. A
-client can end up with any number of named portfolios, each with its own
-Equity + Fixed Income pair.
+Building one portfolio is a linear sequence — but the **top nav breadcrumb
+is clickable**: any step you've already reached (its data exists — see
+`reachableSteps` in `src/App.jsx`) can be jumped straight back to, not just
+the very next one. The **Dashboard is a persistent hub, not the flow's
+endpoint**: once you've built one portfolio, "Make new/additional portfolio"
+re-enters the same sequence to build a separate, independently named one,
+without discarding the ones already built. A client can end up with any
+number of named portfolios, each with its own Equity + Fixed Income pair.
+
+Equity and Fixed Income don't buy anything themselves — each just hands off
+a **draft** (the raw holdings + weights + a target amount, unpriced) once
+you click its "Continue" button. Nothing is priced, sized, or saved
+server-side until the **Portfolio Summary** step's single **Buy portfolio**
+button fires — that's what prices and persists both legs together, as one
+combined order, in a single pass.
 
 1. **Risk profile** (`src/RiskQuestionnaire.jsx`) — a mock RPQ (risk profile
    questionnaire). The real thing would score a series of questions about
@@ -27,12 +35,14 @@ Equity + Fixed Income pair.
    out here and held back from both legs — see "Cash allocation" below. A
    **0% target on either side skips that step entirely** — 0% Equity goes
    straight to Fixed Income, and 0% Fixed Income (after Equity) goes straight
-   to the Dashboard — rather than making someone build a portion that would
-   only ever end up empty.
+   to Portfolio Summary — rather than making someone build a portion that
+   would only ever end up empty.
 2. **Equity** (`src/PortfolioBuilder.jsx`) — the stock screener described
    below (live pricing, the AI "describe what you want" box, templates,
    build-your-own filters), its order-value field pre-filled from step 1.
-   Ends with **Buy portfolio**, then **Continue to Fixed Income →**.
+   Ends with **Continue to Portfolio Summary →** (or **Continue to Fixed
+   Income →** if there's a Fixed Income leg still to build) — this only
+   packages the current holdings/weights as a draft, no server call yet.
 3. **Fixed Income** (`src/BondPortfolioBuilder.jsx` + `src/bondData.js`) — a
    bond portfolio builder, ultimately meant to be GBP-corporate-only, but
    that lock is **temporarily switched off** — the placeholder universe (184
@@ -43,22 +53,21 @@ Equity + Fixed Income pair.
    corporate bond list arrives (see its in-app disclosure), at which point
    both locks should be re-added in `passesFilters`. All filters are still
    hard filters (region, sector, credit rating, YTM range, duration range —
-   no soft/preference tilts). Bonds are priced from the static `price` field
-   already in `bondData.js` (no live quote fetch needed — there's no feed
-   for bonds), its order-value field also pre-filled from step 1. Ends with
-   **Buy portfolio**, then **Continue to Dashboard →**.
+   no soft/preference tilts). Bonds already carry a static `price` field in
+   `bondData.js` (no live quote fetch needed — there's no feed for bonds),
+   its order-value field also pre-filled from step 1. Ends with **Continue
+   to Portfolio Summary →** — same deal, just a draft handoff.
+4. **Portfolio Summary** (`src/PortfolioSummary.jsx`) — shows both legs'
+   target split, region/sector charts, and holdings, side by side, still
+   unpriced. The single **Buy portfolio** button here prices and sizes
+   whichever legs exist (applying the 1.75% cash sleeve to each), saves them
+   via `POST /api/buy` and/or `POST /api/buy-bonds`, then links them into one
+   portfolio record via `POST /api/portfolios`. If pricing/saving one leg
+   succeeds but the other (or the final link-together call) fails, the
+   component remembers which leg already went through, so retrying only
+   redoes what's left rather than double-submitting.
 
-Both builder steps have a **← Back** link (to Risk Profile from Equity; to
-Equity — or Risk Profile, if Equity was skipped — from Fixed Income), so you
-can revisit an earlier step without losing progress:
-- Going back to Risk Profile shows whatever you previously entered (cash,
-  split), not blank defaults, so it's a real "adjust and continue" rather
-  than a restart.
-- If a leg was already bought before backing up, rebuying it re-points the
-  *same* portfolio at the new buy (`PATCH /api/portfolios/:id`) instead of
-  creating a duplicate and leaving the original orphaned; changing the split
-  itself syncs the portfolio's stored target too.
-4. **Dashboard** (`src/Dashboard.jsx`) has two views:
+5. **Dashboard** (`src/Dashboard.jsx`) has two views:
    - **Hub** (default) — an "Entire portfolio" section blending every
      portfolio's Equity legs and every portfolio's Fixed Income legs
      separately (dollar-weighted within each currency — see "Currency
@@ -73,11 +82,22 @@ can revisit an earlier step without losing progress:
      buttons (Equity only / Fixed Income only / entire portfolio) — see
      "Selling" below for what these actually do.
 
+Every step before Summary has a **← Back** link, so you can revisit an
+earlier step without losing progress — going back to Risk Profile shows
+whatever you previously entered (cash, split), not blank defaults, so it's a
+real "adjust and continue" rather than a restart. Backing up leaves any
+drafts already built as-is; nothing is discarded until you actually
+regenerate that step.
+
 There's no login system, so "your portfolios" persistence is just the list
 of server-generated ids the browser keeps in `localStorage`
 (`src/App.jsx` — the flow's orchestrator) — reopening the site with that
 list saved resumes straight at the Dashboard hub, or (if a portfolio's
-Fixed Income leg was left unfinished) offers to pick up where you left off.
+Fixed Income leg was left unfinished) offers to pick up where you left off —
+routed through Fixed Income and then Summary again, but since that
+portfolio's Equity leg was already priced and saved, Summary here only
+prices the new Fixed Income leg and `PATCH`es it onto the existing
+portfolio, rather than creating a second one.
 There's no cross-device access and nothing tied to a real account; clearing
 the browser's storage (or the de-emphasized "Clear everything and start
 over" link on the Dashboard) wipes every known portfolio and starts fresh.
@@ -194,10 +214,12 @@ integrations.
 ## What the buy feature does
 
 **Equity:**
-1. **Generate a portfolio** as usual (template, filters, or the AI box).
-2. In the **"Prices all N current holdings…"** panel, give it a portfolio
-   name (prefilled from the generated portfolio's name) and a dollar amount,
-   then hit **Buy portfolio**.
+1. **Generate a portfolio** as usual (template, filters, or the AI box),
+   then continue to Portfolio Summary — this only hands off a draft, nothing
+   is priced or saved yet.
+2. On **Portfolio Summary**, give the combined portfolio a name and confirm
+   the dollar amount (both prefilled from the draft), then hit **Buy
+   portfolio**.
 3. The backend fetches current prices for every holding — Finnhub first,
    Twelve Data as a fallback for whatever Finnhub can't price (see "Live
    pricing" above) — sizes the order (shares = weight × dollar amount ÷
@@ -211,10 +233,12 @@ integrations.
 
 **Fixed Income:** the same shape, minus the live-quote step — bonds are
 already priced by the static `price` field in `bondData.js` (clean price per
-£100 face value), so the frontend sizes the order itself (£ amount = weight
-× portfolio value, using only bonds that have a price) and `POST
-/api/buy-bonds` just validates and persists it tagged asset class `bond`.
-Give it a portfolio name and a £ portfolio value, hit **Buy portfolio**, done.
+£100 face value), so the frontend sizes the order itself, at Portfolio
+Summary, from the drafted weights (£ amount = weight × portfolio value,
+using only bonds that have a price) and `POST /api/buy-bonds` just validates
+and persists it tagged asset class `bond`. Same Summary-page name/amount
+fields, same **Buy portfolio** button — this and the Equity leg above are
+priced and saved together in one pass, not two separate ones.
 
 Either way, that's it from the browser's point of view — no combined-order
 panel or download button on the site. Once a day (15:00 UTC, see "Hosting
@@ -256,16 +280,21 @@ through each once deployed and fix the table if any land wrong.
 portfolio-demo/
 ├─ src/                  React frontend (Vite)
 │  ├─ App.jsx                 the guided flow's orchestrator — holds theme/step/rpq/
-│  │                           portfolioId state, renders whichever step is active,
-│  │                           persists the portfolio id to localStorage
+│  │                           equityDraft/bondDraft state, renders whichever step
+│  │                           is active, computes which breadcrumb steps are
+│  │                           clickable, persists the portfolio id to localStorage
+│  │                           once Summary's buy succeeds
 │  ├─ RiskQuestionnaire.jsx    step 1 — mock RPQ (Equity/Fixed Income % split)
-│  ├─ PortfolioBuilder.jsx     step 2 — Equity builder
-│  ├─ BondPortfolioBuilder.jsx step 3 — Fixed Income builder
-│  ├─ Dashboard.jsx            step 4 — combined portfolio view + Sell buttons
+│  ├─ PortfolioBuilder.jsx     step 2 — Equity builder (hands back a draft, doesn't buy)
+│  ├─ BondPortfolioBuilder.jsx step 3 — Fixed Income builder (same — draft, not a buy)
+│  ├─ PortfolioSummary.jsx     step 4 — combined review of both drafts + the single
+│  │                           "Buy portfolio" action that prices/saves both legs
+│  ├─ Dashboard.jsx            step 5 — combined portfolio view + Sell buttons
 │  ├─ shared.jsx               palette + chart components shared by the flow-level
-│  │                           screens (RiskQuestionnaire, Dashboard, App's step
-│  │                           breadcrumb) — PortfolioBuilder/BondPortfolioBuilder
-│  │                           each keep their own copy of these, predating the flow
+│  │                           screens (RiskQuestionnaire, Dashboard, PortfolioSummary,
+│  │                           App's step breadcrumb) — PortfolioBuilder/
+│  │                           BondPortfolioBuilder each keep their own copy of these,
+│  │                           predating the flow
 │  ├─ bondData.js              placeholder GBP/USD bond universe (184 bonds)
 │  └─ api.js                  thin client for the backend endpoints below
 └─ server/                Express + SQLite backend
@@ -303,25 +332,30 @@ portfolio-demo/
 - `POST /api/buy` — `{ portfolioName, dollarAmount, holdings }` → prices,
   sizes, and persists an equity buy list; returns it. Each holding needs both
   `ticker` and `exch` (the exchange code) — the provider symbol mapping
-  needs both, not just the ticker alone.
+  needs both, not just the ticker alone. Called from `PortfolioSummary.jsx`'s
+  Buy action (using the drafted holdings `PortfolioBuilder.jsx` handed off
+  earlier), not from the Equity builder itself.
 - `POST /api/buy-bonds` — `{ portfolioName, poundAmount, holdings, totalAllocated, cash }`
-  → persists an already-priced-and-sized bond buy list (pricing/sizing
-  happens client-side in `BondPortfolioBuilder.jsx`, since bond prices are
-  static data, not a live quote); returns it.
+  → persists an already-priced-and-sized bond buy list. Pricing/sizing
+  happens client-side (bond prices are static data, not a live quote) in
+  `PortfolioSummary.jsx`'s Buy action, from the drafted weights
+  `BondPortfolioBuilder.jsx` handed off earlier; returns it.
 - `POST /api/portfolios` — `{ name, rpqEquityPct, rpqFiPct, equityBuyListId?, bondBuyListId? }`
-  → creates a portfolio record (server-generated UUID), called once
-  whichever leg finishes first has its buy saved — normally Equity, but a
-  0%-equity target skips straight to Fixed Income, so at least one of
-  `equityBuyListId`/`bondBuyListId` is required, not `equityBuyListId`
-  specifically. `name` is chosen client-side (e.g. "Portfolio 2", counting
-  up from how many portfolios this browser already knows about) so multiple
-  portfolios are distinguishable on the Dashboard. Returns `{ id }`.
+  → creates a portfolio record (server-generated UUID). Normally called once
+  from `PortfolioSummary.jsx` with both leg ids together, right after both
+  buys above succeed; a 0%-target leg is simply omitted, so at least one of
+  `equityBuyListId`/`bondBuyListId` is required, not both. `name` is chosen
+  client-side (e.g. "Portfolio 2", counting up from how many portfolios this
+  browser already knows about) so multiple portfolios are distinguishable on
+  the Dashboard. Returns `{ id }`.
 - `PATCH /api/portfolios/:id` — `{ bondBuyListId?, equityBuyListId?, rpqEquityPct?, rpqFiPct? }`
-  → updates an already-created portfolio: attaches the Fixed Income leg
-  (normal path), re-points the Equity leg at a fresh buy (if someone backed
-  up from Fixed Income and rebought — see "The guided flow" above), and/or
-  syncs the target split (if the split changed on a trip back to Risk
-  Profile). At least one field must be present; any combination is valid.
+  → updates an already-created portfolio. In the current flow this only
+  fires for the Dashboard's "Complete Fixed Income" resume path — a
+  portfolio whose Equity leg was already priced and saved (from an earlier
+  session), where `PortfolioSummary.jsx` prices just the new Fixed Income
+  leg and PATCHes it on rather than creating a duplicate portfolio. Also
+  used to sync the target split if it changed on a trip back to Risk
+  Profile. At least one field must be present; any combination is valid.
 - `GET /api/portfolios/:id` — the Dashboard's one fetch: portfolio metadata
   (RPQ target, sold status per leg) plus both legs' full buy (and, once
   sold, sell) records, holdings included.

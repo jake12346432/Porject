@@ -18,7 +18,7 @@ const CASH_ALLOCATION_PCT = 1.75;
 
 // initialEquityPct/initialCash let "Make new/additional portfolio" (from the Dashboard) pre-fill
 // this screen with the split/amount from the last portfolio, rather than starting blank every time.
-export default function RiskQuestionnaire({ theme, setTheme, onComplete, initialEquityPct = 60, initialCash = 10000 }) {
+export default function RiskQuestionnaire({ theme, setTheme, onComplete, initialEquityPct = 60, initialCash = 10000, onStepClick, reachableSteps }) {
   const t = THEMES[theme];
   const [equityPct, setEquityPct] = useState(initialEquityPct);
   const [cash, setCash] = useState(initialCash);
@@ -47,7 +47,7 @@ export default function RiskQuestionnaire({ theme, setTheme, onComplete, initial
           <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 500, color: t.muted }}>Wealth</span>
         </div>
         <div style={{ width: 1, height: 22, background: t.gridLine, margin: "0 4px" }} />
-        <FlowBreadcrumb t={t} step="rpq" />
+        <FlowBreadcrumb t={t} step="rpq" onStepClick={onStepClick} reachable={reachableSteps} />
         <div style={{ marginLeft: "auto" }}>
           <button
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
