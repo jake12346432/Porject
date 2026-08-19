@@ -979,25 +979,34 @@ export default function PortfolioBuilder({ theme, setTheme, rpq, onBuyComplete, 
   const regionChart = allocToChartData(regionAlloc, 7);
 
   // Historical performance from the uploaded spreadsheet, if there is one — a real month-by-month
-  // series, not a two-point estimate. Only holdings present in EVERY row of the file are included,
-  // so the line reflects a consistent basket throughout, and weights are renormalized among just
-  // those holdings so the starting point is still a clean $10,000.
+  // (or quarter-by-quarter) series, not a two-point estimate. Only holdings present in EVERY row of
+  // the file are included, so the line reflects a consistent basket throughout, and weights are
+  // renormalized among just those holdings so the starting point is still a clean $10,000.
+  //
+  // Rebalanced at every period, not buy-and-hold: each point's value is last period's value
+  // redistributed back to today's target weights (s.weight/wSum) before drifting with that period's
+  // price move — a stock that ran up doesn't compound into an ever-larger share of the line the way
+  // it would with fixed share counts held from day one.
   const sheetPerf = useMemo(() => {
     if (!historySheet || selected.length === 0) return null;
     const rows = historySheet.rows;
     const withFullHistory = selected.filter(s => rows.every(r => r.prices[s.ticker] != null));
     if (withFullHistory.length === 0) return null;
     const wSum = withFullHistory.reduce((a, s) => a + s.weight, 0) || 1;
-    const startRow = rows[0];
-    const shares = {};
-    withFullHistory.forEach(s => {
-      const dollarsThen = (s.weight / wSum) * 10000;
-      shares[s.ticker] = dollarsThen / startRow.prices[s.ticker];
-    });
     const isQuarterly = historySheet.periodsPerYear === 4;
-    const points = rows.map(r => {
-      let val = 0;
-      withFullHistory.forEach(s => { val += shares[s.ticker] * r.prices[s.ticker]; });
+
+    let val = 10000;
+    const points = rows.map((r, i) => {
+      if (i > 0) {
+        // Shares implied by rebalancing last period's value to target weights at last period's
+        // prices, then drifted forward to this period's prices — the drift this period's own
+        // rebalance (next iteration) will correct.
+        const prevRow = rows[i - 1];
+        val = withFullHistory.reduce((sum, s) => {
+          const shares = ((s.weight / wSum) * val) / prevRow.prices[s.ticker];
+          return sum + shares * r.prices[s.ticker];
+        }, 0);
+      }
       const label = isQuarterly
         ? `Q${Math.floor(r.date.getMonth() / 3) + 1} '${String(r.date.getFullYear()).slice(2)}`
         : r.date.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
@@ -1642,7 +1651,7 @@ ${list}`;
                         </div>
                       </div>
                       <div style={{ fontSize: 11, color: t.faint, maxWidth: 340, textAlign: "right", lineHeight: 1.5 }}>
-                        {historySheet.builtIn ? "From Titan's built-in price history" : "From your uploaded file"} — real prices, not simulated. Covers {sheetPerf.coveredCount} of {sheetPerf.totalCount} holdings
+                        {historySheet.builtIn ? "From Titan's built-in price history" : "From your uploaded file"} — real prices, not simulated, rebalanced back to target weights every {historySheet.periodLabel}. Covers {sheetPerf.coveredCount} of {sheetPerf.totalCount} holdings
                         (only names present in every row are included). Past performance isn't a guide to future returns.
                       </div>
                     </div>
